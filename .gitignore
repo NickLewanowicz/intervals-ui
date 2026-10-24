@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.scratch/
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+
+# Expo
+apps/expo/.expo/
+apps/expo/web-build/
+apps/expo/dist/
+*.tsbuildinfo
+
+# Worker
+apps/worker/.wrangler/
+apps/worker/.dev.vars
+
+# Coverage
+coverage/
+
+# QA artifacts (not worth versioning)
+qa-screenshots/
+.playwright-mcp/

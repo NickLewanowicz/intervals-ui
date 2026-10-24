@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "intervals-coach",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // workers.dev route for the coach API (CORS-locked to the app origins).
+  // Custom domain option (later): route api.intervals.imnick.dev/* on the imnick.dev zone.
+  "workers_dev": true,
+  "triggers": {
+    // Sync every user's intervals.icu mirror 4x/day (ADR-0001: PB cron is
+    // unreliable on pockethost — hibernation drops intervals; cron lives here).
+    "crons": ["0 */6 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+  // Secrets (set once via `pnpm worker:secrets`, never committed):
+  //   PB_URL, PB_EMAIL, PB_PASSWORD
+}

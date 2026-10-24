@@ -1,0 +1,27 @@
+{
+  "name": "intervals-ui",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "description": "AI-coached view of your intervals.icu — calendar, stats, and a coach that plans (monorepo: Expo app + Cloudflare Worker + shared core)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "build": "pnpm -r --if-present build",
+    "web": "pnpm --filter @intervals/expo web",
+    "web:export": "pnpm --filter @intervals/expo export:web",
+    "worker:dev": "pnpm --filter @intervals/worker dev",
+    "worker:deploy": "pnpm --filter @intervals/worker deploy",
+    "pb:setup": "node tools/pb_setup.mjs",
+    "pb:sync": "node tools/pb_sync.mjs",
+    "pb:devuser": "node tools/pb_dev_user.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0"
+  }
+}
