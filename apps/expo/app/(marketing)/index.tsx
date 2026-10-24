@@ -1,9 +1,11 @@
 /**
- * Splash / product page. Static, grayscale, no data.
+ * Splash / product page. Static, grayscale, no data. CTAs navigate to
+ * /sign-in; the 80/20 section is a placeholder for issue V-01 (full product
+ * story) — structure only for now.
  */
-import { Link } from 'expo-router';
+import { router } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '@/components/ui';
 import { colors, fontSize, radius, spacing } from '@/theme';
 
@@ -27,7 +29,7 @@ const STEPS: Array<{ n: string; title: string; body: string }> = [
 
 export default function MarketingPage() {
   return (
-    <View style={styles.page}>
+    <ScrollView style={styles.page} contentContainerStyle={styles.content}>
       <View style={styles.hero}>
         <Text style={styles.headline}>Your training, coached.</Text>
         <Text style={styles.sub}>
@@ -35,12 +37,17 @@ export default function MarketingPage() {
           every change.
         </Text>
         <View style={styles.ctaRow}>
-          <Link href="/sign-in" asChild>
-            <PressableSlot label="Get started" />
-          </Link>
-          <Link href="/sign-in" asChild>
-            <PressableSlot label="Sign in" variant="ghost" />
-          </Link>
+          <Button
+            title="Get started"
+            onPress={() => router.push('/sign-in')}
+            style={styles.cta}
+          />
+          <Button
+            title="Sign in"
+            variant="ghost"
+            onPress={() => router.push('/sign-in')}
+            style={styles.cta}
+          />
         </View>
       </View>
 
@@ -56,29 +63,35 @@ export default function MarketingPage() {
           </View>
         ))}
       </View>
-    </View>
-  );
-}
 
-/** Bridge so <Button/> can live inside a <Link asChild>. */
-function PressableSlot({ label, variant }: { label: string; variant?: 'ghost' }) {
-  return (
-    <View>
-      <Button title={label} variant={variant ?? 'primary'} style={{ minWidth: 140 }} />
-    </View>
+      <View style={styles.principles}>
+        <Text style={styles.principlesTitle}>Built on 80/20 training principles</Text>
+        <Text style={styles.principlesBody}>
+          The coach plans from the distribution the running literature converges on — roughly 80%
+          easy aerobic work to 20% quality — scaled to your current fitness and race goals.
+        </Text>
+        <Text style={styles.principlesBody}>
+          Every suggestion cites the distilled training books and your own numbers, so the reasoning
+          is always visible and never a black box.
+        </Text>
+      </View>
+
+      <Text style={styles.disclaimer}>
+        Educational guidance from distilled training literature and your own data — not medical
+        advice; pain or injury means a professional, not a plan tweak.
+      </Text>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  page: {
-    flex: 1,
-    backgroundColor: colors.bg,
+  page: { flex: 1, backgroundColor: colors.bg },
+  content: {
     alignItems: 'center',
-    justifyContent: 'center',
     padding: spacing.xl,
     gap: spacing.xxl,
   },
-  hero: { maxWidth: 560, alignItems: 'center', gap: spacing.lg },
+  hero: { maxWidth: 560, alignItems: 'center', gap: spacing.lg, marginTop: spacing.xxl },
   headline: {
     color: colors.text,
     fontSize: fontSize.title + 6,
@@ -91,7 +104,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  ctaRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
+  ctaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
+  cta: { minWidth: 140 },
   stepsWrap: { maxWidth: 560, width: '100%', gap: spacing.md },
   stepsTitle: {
     color: colors.muted,
@@ -118,4 +132,25 @@ const styles = StyleSheet.create({
   },
   stepTitle: { color: colors.text, fontSize: fontSize.body, fontWeight: '600' },
   stepBody: { color: colors.muted, fontSize: fontSize.small, lineHeight: 19, marginTop: 2 },
+  principles: {
+    maxWidth: 560,
+    width: '100%',
+    gap: spacing.sm,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  principlesTitle: { color: colors.text, fontSize: fontSize.body, fontWeight: '700' },
+  principlesBody: { color: colors.muted, fontSize: fontSize.small, lineHeight: 19 },
+  disclaimer: {
+    maxWidth: 560,
+    color: colors.muted,
+    fontSize: fontSize.tiny,
+    textAlign: 'center',
+    lineHeight: 16,
+    opacity: 0.8,
+    marginBottom: spacing.sm,
+  },
 });

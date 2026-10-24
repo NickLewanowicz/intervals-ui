@@ -10,16 +10,24 @@ contract.
 
 ## Your loop
 
-1. Read `packages/core/src/prompts/coach.ts` (current prompt, version N) and
-   `docs/research/openrouter-models-brief.md`.
+1. Read `packages/core/src/prompts/coach.ts` (+ `knowledge.ts` once present),
+   `docs/research/openrouter-models-brief.md`, and `docs/research/eval-log.md`.
 2. Pick or write fixtures: `.scratch/evals/fixtures/*.json` — each has
-   `{ athleteContext, userMessage, expect: {proposals?: [...shapes], noWrite?: bool, mustMention?: [strings]} }`.
-3. Run `node tools/eval_prompts.mjs --model <id> [--prompt-file <path>]` — it
-   calls OpenRouter for real (key from `.env`, OPENROUTER_API_KEY) and scores
-   the outputs (schema-valid EventEx, category correctness, race handling,
-   sensible loads, description parseability — see the harness).
-4. For prompt changes: copy the prompt module, edit, run A/B (baseline vs
-   candidate) across fixtures, report the score table.
+   `{ athleteContext, userMessage, expect: {proposals?, noWrite?, mustMention?} }`.
+3. **FREE PROXY EVAL (preferred first pass — costs nothing):** spawn a
+   subagent that ROLE-PLAYS the coach: give it the candidate system prompt +
+   fixture context as its system message and the userMessage as the user
+   turn; require it to reply ONLY with the raw JSON it would send to
+   OpenRouter (`{"content": "...", "tool_calls": [...]}`). Validate those
+   tool_calls with `validateProposal` (packages/core) and score against the
+   fixture expectations exactly like `tools/eval_prompts.mjs` does. Iterate
+   the prompt this way as many times as needed — subagents run on the
+   unlimited tier.
+4. **REAL CONFIRMATION (spend cap $0.50/run):** for the winning prompt only,
+   run `node tools/eval_prompts.mjs --model <id>` (real OpenRouter calls,
+   key from `.env`) to confirm the proxy result transfers. If proxy and real
+   disagree, trust the real run and figure out why (usually: proxy model is
+   too smart — retest proxy with the actual roster model's quirks in mind).
 5. Ship only improvements: bump `COACH_PROMPT_VERSION`, add a fixture for any
    newly-fixed failure mode, keep `packages/core/tests/prompts.test.ts` green.
 
@@ -30,5 +38,6 @@ contract.
   on it.
 - Model changes go in `MODEL_ROSTER` only with eval numbers attached (cost per
   turn + failure counts). Default model changes need 3 fixtures × 2 models.
-- Budget: stay under $0.50 of eval spend per run unless told otherwise.
+- Eval harness and proxy evals NEVER call intervals.icu — proposals are
+  validated in memory only (AGENTS.md #2).
 - Everything you learn lands in `docs/research/eval-log.md` (append-only).

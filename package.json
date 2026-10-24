@@ -12,13 +12,15 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "build": "pnpm -r --if-present build",
+    "dev:web": "pnpm --filter @intervals/expo web",
     "web": "pnpm --filter @intervals/expo web",
     "web:export": "pnpm --filter @intervals/expo export:web",
     "worker:dev": "pnpm --filter @intervals/worker dev",
     "worker:deploy": "pnpm --filter @intervals/worker deploy",
     "pb:setup": "node tools/pb_setup.mjs",
     "pb:sync": "node tools/pb_sync.mjs",
-    "pb:devuser": "node tools/pb_dev_user.mjs"
+    "pb:devuser": "node tools/pb_dev_user.mjs",
+    "eval": "node tools/eval_prompts.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { COACH_TOOLS, openRouterFetchInit, OPENROUTER_CHAT_URL } from '../src/models';
-import { buildCoachSystemPrompt, DEFAULT_MODEL_ID, MODEL_ROSTER, resolveModel } from '../src/prompts/coach';
+import { buildCoachSystemPrompt, COACH_PROMPT_VERSION, DEFAULT_MODEL_ID, MODEL_ROSTER, resolveModel } from '../src/prompts/coach';
+import { TRAINING_KNOWLEDGE, TRAINING_SOURCES } from '../src/prompts/knowledge';
 
 describe('buildCoachSystemPrompt', () => {
   const prompt = buildCoachSystemPrompt({
@@ -29,6 +30,20 @@ describe('buildCoachSystemPrompt', () => {
   it('describes intervals.icu description syntax', () => {
     expect(prompt).toContain('Main Set 4x');
     expect(prompt).toContain('Z2 Pace');
+  });
+
+  it('v2 embeds the 80/20 knowledge base as the planning anchor', () => {
+    expect(COACH_PROMPT_VERSION).toBeGreaterThanOrEqual(2);
+    expect(prompt).toContain('80/20');
+    expect(prompt).toContain(TRAINING_KNOWLEDGE.slice(0, 200)); // KB actually embedded
+    expect(prompt).toContain('moderate trap');
+    expect(prompt).toContain('not medical advice');
+    expect(TRAINING_SOURCES).toMatch(/80\/20 Running/);
+  });
+
+  it('keeps the system prompt within a sane budget for the roster models', () => {
+    // 1M-context models, but context = cost per turn; keep the static part lean
+    expect(prompt.length).toBeLessThan(30_000);
   });
 });
 

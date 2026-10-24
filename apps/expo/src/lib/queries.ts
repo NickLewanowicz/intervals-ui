@@ -5,6 +5,12 @@
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import type { Activity, EventEx, WellnessDay } from '@intervals/core';
 import { listProposals, type SyncResult } from './api';
+import {
+  calendarWindowFilter,
+  chatMessagesFilter,
+  syncStateFilter,
+  wellnessFilter,
+} from './filters';
 import { currentUserId, pb } from './pb';
 import { toActivity, toEvent, toWellness, type Proposal } from './records';
 
@@ -29,10 +35,7 @@ export function useCalendarWindow(from: string, to: string): UseQueryResult<Cale
     queryFn: async (): Promise<CalendarWindow> => {
       const user = currentUserId();
       if (!user) return { events: [], activities: [] };
-      const filter =
-        `user = "${user}" && ` +
-        `start_date_local >= "${from}T00:00:00" && ` +
-        `start_date_local <= "${to}T23:59:59"`;
+      const filter = calendarWindowFilter(user, from, to);
       const [ev, ac] = await Promise.all([
         pb.collection('calendar_events').getList(1, 300, { filter, sort: 'start_date_local' }),
         pb.collection('activities').getList(1, 300, { filter, sort: 'start_date_local' }),
@@ -52,7 +55,7 @@ export function useWellness(days = 14): UseQueryResult<WellnessDay[]> {
       if (!user) return [];
       const res = await pb
         .collection('wellness')
-        .getList(1, days, { filter: `user = "${user}"`, sort: '-date' });
+        .getList(1, days, { filter: wellnessFilter(user), sort: '-date' });
       return res.items.map(toWellness);
     },
   });
@@ -73,7 +76,7 @@ export function useSyncState(): UseQueryResult<SyncStateRow | null> {
       if (!user) return null;
       const res = await pb
         .collection('sync_state')
-        .getList(1, 1, { filter: `user = "${user}"`, sort: '-updated' });
+        .getList(1, 1, { filter: syncStateFilter(user), sort: '-updated' });
       const row = res.items[0];
       if (!row) return null;
       return {
@@ -100,7 +103,7 @@ export function useChatMessages(sessionId: string | null): UseQueryResult<ChatMe
       if (!sessionId) return [];
       const res = await pb
         .collection('chat_messages')
-        .getList(1, 100, { filter: `session = "${sessionId}"`, sort: 'created' });
+        .getList(1, 100, { filter: chatMessagesFilter(sessionId), sort: 'created' });
       return res.items.map((r) => ({
         id: r.id,
         role: r.role === 'assistant' ? 'assistant' : 'user',
