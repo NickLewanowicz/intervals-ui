@@ -12,7 +12,15 @@ import { pb } from './pb';
 import { createSSEParser, readSSEResponse, type SSEHandler } from './sse';
 import type { Proposal, ProposalKind } from './records';
 
-export const WORKER_URL = process.env.EXPO_PUBLIC_WORKER_URL ?? 'http://localhost:8787';
+/**
+ * FIX-1: the worker URL must never silently fall back to localhost in a
+ * production build (that shipped once — chat/sync/proposals were dead on the
+ * deployed site while every error said "is it running?"). Localhost is only
+ * for dev; production builds bake the deployed worker (env var wins when set).
+ */
+const PROD_WORKER_URL = 'https://intervals-coach.imnick.workers.dev';
+export const WORKER_URL =
+  process.env.EXPO_PUBLIC_WORKER_URL ?? (__DEV__ ? 'http://localhost:8787' : PROD_WORKER_URL);
 
 export class WorkerError extends Error {
   constructor(
@@ -37,7 +45,12 @@ async function workerJson<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { ...authHeaders(), 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     });
   } catch (e) {
-    throw new WorkerError(0, `Worker unreachable (${WORKER_URL}) — is it running?`);
+    throw new WorkerError(
+      0,
+      __DEV__
+        ? `Worker unreachable (${WORKER_URL}) — is it running?`
+        : `Coach service unreachable (${WORKER_URL}) — try again shortly.`,
+    );
   }
   const text = await res.text();
   if (!res.ok) {
@@ -90,7 +103,11 @@ export async function streamChat(opts: ChatStreamOptions & ChatStreamEvent): Pro
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
-    opts.onError(`Coach unreachable (${WORKER_URL}) — is it running?`);
+    opts.onError(
+      __DEV__
+        ? `Coach unreachable (${WORKER_URL}) — is it running?`
+        : 'Coach service unreachable — check your connection and retry.',
+    );
     return;
   }
   if (!res.ok) {

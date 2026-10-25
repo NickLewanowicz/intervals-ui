@@ -144,12 +144,34 @@ plan-status ("coach: taper starts in 3w").
 
 ---
 
-## Order
+---
 
-1. V-06 (tokens) → V-01, V-02, V-03, V-04 (core screens) → V-05, V-07
-2. V-09 in parallel (coach-tuner, no UI dependency)
-3. V-08 the moment Part A lands; V-10 after core screens stabilize
-4. V-11..V-13 last
+## Direction updates (2026-10-24, post-round-1 review)
+
+After the round-1 visual review (docs/qa/round-1.md — 12 FIXes, 2 functional)
+and Nick's follow-up direction, the design work is now anchored to:
+
+1. **Design north star (updates V-06):** emulate the viet-study app's look —
+   https://viet.imnick.dev — especially its glassy translucent nav/top chrome.
+   Translate to native: blurred bottom tab bar, translucent sheets, iOS-26 /
+   macOS "liquid glass" surfaces, springy micro-motion. Extremely smooth,
+   extremely native.
+2. **Themes (updates V-06):** light + dark + system-default via
+   useColorScheme(), manual override in Settings. Dark-first stays.
+3. **Icons everywhere (new, V-14):** bottom tabs (calendar / coach / settings)
+   get icons + labels; icons in proposal actions, sync, settings rows, empty
+   states. @expo/vector-icons, one set.
+4. **Web-only marketing home (new, V-15):** the splash exists only on the web
+   deployment; native builds open on sign-in. Platform gate in the root
+   layout; ties into L-01 (Gitea #14 — local-only mode for native/desktop
+   builds, everything on-device, PocketBase reserved for authenticated users).
+5. **Assets via Replicate** (gpt-image / flux): coach avatar, glassy
+   background textures (dark + light) for splash hero + chat empty state.
+
+Round-2 (design pass) is executed by the senior-UX-designer agent; its output
+lands as a deploy + its own verification, then a round-3 re-review clears the
+BLOCKED proposal-modal items (needs a real approve in a safe moment — with
+Nick's go-ahead, since that writes to the real calendar).
 
 ## Guardrails for this worklist (restated)
 
@@ -157,3 +179,13 @@ plan-status ("coach: taper starts in 3w").
   or apply only when explicitly asked by Nick.
 - `pnpm test` + `pnpm typecheck` green before every commit; CI deploys main.
 - Every visual judgment needs a screenshot under `qa-screenshots/`.
+
+## Order (updated)
+
+1. ~~V-06 tokens~~ → **done, superseded by the Direction updates above** —
+   round-2 design pass (glass/themes/icons/motion/assets + all 12 round-1
+   FIXes) executed by the UX-designer agent.
+2. V-09 coach quality — round 1 done (7/7 eval, prompt v2 live); round 2 =
+   more fixtures + real-model comparisons as usage grows.
+3. V-08 the moment Part A lands; V-10 after the design pass stabilizes.
+4. V-11..V-13 + L-01 (Gitea #14) after that.

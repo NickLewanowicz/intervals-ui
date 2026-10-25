@@ -1,15 +1,22 @@
 /**
  * Email + password sign-in (PocketBase). Google OAuth is pending a consent
- * screen — the button ships disabled.
+ * screen — the button ships disabled. The marketing splash is web-only, so
+ * the "Back" link is web-only too (native opens here).
  */
+import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Field } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
-import { colors, fontSize, spacing } from '@/theme';
+import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
+import { useTheme } from '@/theme-context';
 
 export default function SignInPage() {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const insets = useSafeAreaInsets();
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,12 +46,17 @@ export default function SignInPage() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.page}
+      style={[s.page, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.wrap}>
-        <Text style={styles.title}>Sign in</Text>
-        <Text style={styles.subtitle}>Your training, coached.</Text>
+      <View style={s.wrap}>
+        <View style={s.brandRow}>
+          <View style={s.brandMark}>
+            <Ionicons name="flash" size={20} color={colors.onAccent} />
+          </View>
+          <Text style={s.title}>Sign in</Text>
+        </View>
+        <Text style={s.subtitle}>Your training, coached.</Text>
 
         <Card>
           <Field
@@ -63,25 +75,44 @@ export default function SignInPage() {
             onChangeText={setPassword}
             placeholder="••••••••"
             secureTextEntry
+            textContentType="password"
           />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Button title={busy ? 'Signing in…' : 'Sign in'} onPress={onSubmit} loading={busy} />
-          <Button title="Google — coming soon" variant="ghost" disabled />
+          {error ? <Text style={s.error}>{error}</Text> : null}
+          <Button title={busy ? 'Signing in…' : 'Sign in'} icon="arrow-forward" onPress={onSubmit} loading={busy} />
+          <Button title="Google — coming soon" variant="ghost" icon="logo-google" disabled />
         </Card>
 
-        <Link href="/" replace>
-          <Text style={styles.back}>← Back</Text>
-        </Link>
+        {Platform.OS === 'web' ? (
+          <Link href="/" replace>
+            <Text style={s.back}>← Back</Text>
+          </Link>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center' },
-  wrap: { maxWidth: 420, width: '100%', alignSelf: 'center', padding: spacing.lg, gap: spacing.lg },
-  title: { color: colors.text, fontSize: fontSize.title, fontWeight: '700' },
-  subtitle: { color: colors.muted, fontSize: fontSize.body, marginTop: -spacing.sm },
-  error: { color: colors.danger, fontSize: fontSize.small },
-  back: { color: colors.muted, fontSize: fontSize.small, textAlign: 'center', padding: spacing.sm },
-});
+const styles = (p: Palette) =>
+  StyleSheet.create({
+    page: { flex: 1, backgroundColor: p.bg, justifyContent: 'center' },
+    wrap: {
+      maxWidth: 420,
+      width: '100%',
+      alignSelf: 'center',
+      padding: spacing.lg,
+      gap: spacing.lg,
+    },
+    brandRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    brandMark: {
+      width: 40,
+      height: 40,
+      borderRadius: radius.md,
+      backgroundColor: p.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: { color: p.text, fontSize: fontSize.title, fontWeight: '700' },
+    subtitle: { color: p.muted, fontSize: fontSize.body, marginTop: -spacing.sm },
+    error: { color: p.danger, fontSize: fontSize.small },
+    back: { color: p.muted, fontSize: fontSize.small, textAlign: 'center', padding: spacing.sm },
+  });

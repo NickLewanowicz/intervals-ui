@@ -2,6 +2,14 @@
 
 Filed as Gitea issue #14. Written from Nick's direction, 2026-10-24.
 
+> **Status update (round-2 design pass, 2026-10-24):** the *web vs native
+> home split* described below is now implemented — `app/(marketing)/index.tsx`
+> redirects to `/sign-in` when `Platform.OS !== 'web'` (with a code comment
+> pointing here), and the sign-in "Back" link is web-only. The static export
+> still ships the `/` route for the web deployment; native builds simply never
+> reach it. The rest of this brief (local data source, secure-store keys,
+> desktop packaging) remains open.
+
 ## The feature
 
 The app installs as a **native app on iOS, Android, macOS, and Windows**. On

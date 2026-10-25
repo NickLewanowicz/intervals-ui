@@ -1,19 +1,26 @@
 /**
  * Day detail (pushed from the calendar): full event description, recorded
- * actuals, zone times.
+ * actuals, and the zone-times stacked bar (FIX-4) — "how hard did it go"
+ * readable as a distribution, not prose.
  */
-import { buildDayCells, formatZoneSeconds, isRaceEvent } from '@intervals/core';
+import { buildDayCells, formatDuration, isRaceEvent } from '@intervals/core';
 import { Link, useLocalSearchParams } from 'expo-router';
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Badge, Card, Empty, ErrorBox, Loading } from '@/components/ui';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GlassCard } from '@/components/glass';
+import { Badge, Empty, ErrorBox, IconButton, Loading } from '@/components/ui';
 import { MONTHS, dayLabel, isValidISO, timeLabel, todayISO, weekdayIndex } from '@/lib/dates';
 import { activityLine, eventLine, zoneSecondsOf } from '@/lib/format';
 import { useCalendarWindow } from '@/lib/queries';
-import { colors, fontSize, spacing } from '@/theme';
+import { fontSize, layout, radius, spacing, zoneColor, type Palette } from '@/theme';
+import { useTheme } from '@/theme-context';
 import type { Activity } from '@intervals/core';
 
 export default function DayScreen() {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ date?: string }>();
   const date = typeof params.date === 'string' && isValidISO(params.date) ? params.date : todayISO();
   const { data, isLoading, isError, error } = useCalendarWindow(date, date);
@@ -32,104 +39,168 @@ export default function DayScreen() {
   const fullLabel = `${dayLabel(date)} ${MONTHS[Number(date.slice(5, 7)) - 1]!.slice(0, 3)} ${date.slice(0, 4)}`;
 
   return (
-    <View style={styles.page}>
-      <View style={styles.header}>
-        <Link href="/calendar" replace>
-          <Text style={styles.back}>← Calendar</Text>
+    <View style={[s.page, { paddingTop: insets.top }]}>
+      <View style={s.header}>
+        <Link href="/calendar" replace asChild>
+          <IconButton icon="chevron-back" label="Back to calendar" />
         </Link>
-        <Text style={styles.title}>{fullLabel}</Text>
+        <Text style={s.title} numberOfLines={1}>
+          {fullLabel}
+        </Text>
         {date === todayISO() ? <Badge label="today" tone="accent" /> : null}
       </View>
-      <View style={styles.body}>
+      <ScrollView style={s.scroll} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
         {isLoading ? (
           <Loading label="Loading day…" />
         ) : isError ? (
           <ErrorBox message={`Could not load day: ${(error as Error)?.message ?? 'error'}`} />
         ) : events.length === 0 && activities.length === 0 ? (
-          <Empty message={`Nothing on ${dow === 5 || dow === 6 ? 'the weekend' : 'this day'}. Rest, or plan something with your coach.`} />
+          <Empty
+            message={`Nothing on ${dow === 5 || dow === 6 ? 'the weekend' : 'this day'}. Rest, or plan something with your coach.`}
+            icon="moon-outline"
+          />
         ) : (
           <>
             {events.map((e) => {
               const actual = activities.find((a) => a.paired_event_id === e.id);
               return (
-                <Card key={`e${e.id ?? e.start_date_local}`}>
-                  <View style={styles.rowBetween}>
-                    <Text style={styles.name}>{e.name ?? 'Planned workout'}</Text>
-                    {isRaceEvent(e) ? <Badge label={`RACE ${e.category?.slice(5)}`} tone="danger" /> : null}
+                <GlassCard key={`e${e.id ?? e.start_date_local}`}>
+                  <View style={s.rowBetween}>
+                    <Text style={s.name}>{e.name ?? 'Planned workout'}</Text>
+                    {isRaceEvent(e) ? (
+                      <Badge label={`RACE ${e.category?.slice(5) ?? ''}`} tone="race" icon="flag" />
+                    ) : null}
                   </View>
-                  <Text style={styles.meta}>
+                  <Text style={s.meta}>
                     {[timeLabel(e.start_date_local), eventLine(e), e.type].filter(Boolean).join(' · ')}
                   </Text>
-                  {e.description ? <Text style={styles.description}>{e.description}</Text> : null}
+                  {e.description ? <Text style={s.description}>{e.description}</Text> : null}
                   {actual ? <ActualBlock activity={actual} /> : null}
-                </Card>
+                </GlassCard>
               );
             })}
             {loneActivities.map((a) => (
-              <Card key={`a${a.id}`}>
-                <Text style={styles.name}>✓ {a.name ?? 'Activity'}</Text>
-                <Text style={styles.meta}>
+              <GlassCard key={`a${a.id}`}>
+                <View style={s.rowBetween}>
+                  <Text style={s.name}>{a.name ?? 'Activity'}</Text>
+                  <Badge label="recorded" tone="success" icon="checkmark" />
+                </View>
+                <Text style={s.meta}>
                   {[timeLabel(a.start_date_local), activityLine(a), a.source].filter(Boolean).join(' · ')}
                 </Text>
                 <ActualBlock activity={a} />
-              </Card>
+              </GlassCard>
             ))}
           </>
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 function ActualBlock({ activity }: { activity: Activity }) {
-  const zones = formatZoneSeconds(zoneSecondsOf(activity));
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const zoneSeconds = zoneSecondsOf(activity);
+  const total = Object.values(zoneSeconds).reduce((a, b) => a + b, 0);
+  const zones = Object.entries(zoneSeconds)
+    .filter(([, secs]) => secs >= 60)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
   return (
-    <View style={styles.actual}>
-      <Text style={styles.actualTitle}>Recorded</Text>
-      <Text style={styles.actualMeta}>{activityLine(activity)}</Text>
-      {zones ? <Text style={styles.actualZones}>{zones}</Text> : null}
+    <View style={s.actual}>
+      <Text style={s.actualTitle}>Recorded</Text>
+      <Text style={s.actualMeta}>{activityLine(activity)}</Text>
+      {total > 0 ? (
+        <>
+          {/* FIX-4: proportional stacked bar, cool→hot by zone */}
+          <View style={s.zoneBar}>
+            {zones.map(([id, secs]) => (
+              <View
+                key={id}
+                style={{ flexGrow: secs, backgroundColor: zoneColor(colors, id) }}
+              />
+            ))}
+          </View>
+          <View style={s.zoneLegend}>
+            {zones.map(([id, secs]) => (
+              <View key={id} style={s.zoneLegendItem}>
+                <View style={[styles2.zoneSwatch, { backgroundColor: zoneColor(colors, id) }]} />
+                <Text style={s.zoneLegendText}>
+                  {id} {formatDuration(secs)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    maxWidth: 860,
-    width: '100%',
-    alignSelf: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-    gap: spacing.xs,
-  },
-  back: { color: colors.muted, fontSize: fontSize.small },
-  title: { color: colors.text, fontSize: fontSize.title, fontWeight: '700' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  body: {
-    maxWidth: 860,
-    width: '100%',
-    alignSelf: 'center',
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  name: { color: colors.text, fontSize: fontSize.h, fontWeight: '600', flexShrink: 1 },
-  meta: { color: colors.muted, fontSize: fontSize.small },
-  description: {
-    color: colors.text,
-    fontSize: fontSize.small + 1,
-    lineHeight: 20,
-    backgroundColor: colors.bg,
-    borderRadius: 8,
-    padding: spacing.md,
-  },
-  actual: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-    gap: 2,
-  },
-  actualTitle: { color: colors.accent, fontSize: fontSize.tiny, fontWeight: '700', textTransform: 'uppercase' },
-  actualMeta: { color: colors.text, fontSize: fontSize.small },
-  actualZones: { color: colors.muted, fontSize: fontSize.small },
+const styles2 = StyleSheet.create({
+  zoneSwatch: { width: 8, height: 8, borderRadius: 4 },
 });
+
+const styles = (p: Palette) =>
+  StyleSheet.create({
+    page: { flex: 1, backgroundColor: p.bg },
+    header: {
+      maxWidth: layout.maxW,
+      width: '100%',
+      alignSelf: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.sm,
+    },
+    title: { color: p.text, fontSize: fontSize.h, fontWeight: '700', flexShrink: 1 },
+    scroll: { flex: 1 },
+    rowBetween: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    body: {
+      maxWidth: layout.maxW,
+      width: '100%',
+      alignSelf: 'center',
+      padding: spacing.lg,
+      paddingBottom: spacing.xxxl + layout.tabBarHeight,
+      gap: spacing.md,
+    },
+    name: { color: p.text, fontSize: fontSize.h, fontWeight: '600', flexShrink: 1 },
+    meta: { color: p.muted, fontSize: fontSize.small, fontVariant: ['tabular-nums'] },
+    description: {
+      color: p.text,
+      fontSize: fontSize.small + 1,
+      lineHeight: 20,
+      backgroundColor: p.bg,
+      borderRadius: radius.md,
+      padding: spacing.md,
+      fontFamily: 'Menlo, monospace',
+    },
+    actual: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: p.border,
+      paddingTop: spacing.sm,
+      gap: spacing.xs,
+    },
+    actualTitle: { color: p.accentText, fontSize: fontSize.tiny, fontWeight: '700', textTransform: 'uppercase' },
+    actualMeta: { color: p.text, fontSize: fontSize.small },
+    zoneBar: {
+      flexDirection: 'row',
+      height: 10,
+      borderRadius: radius.sm,
+      overflow: 'hidden',
+      backgroundColor: p.border,
+      gap: 1,
+      marginTop: spacing.xs,
+    },
+    zoneLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+    zoneLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    zoneLegendText: { color: p.muted, fontSize: fontSize.tiny, fontVariant: ['tabular-nums'] },
+  });

@@ -32,3 +32,19 @@ export function zoneSecondsOf(a: Activity): Record<string, number> {
   for (const zt of a.icu_zone_times ?? []) out[zt.id] = (out[zt.id] ?? 0) + zt.secs;
   return out;
 }
+
+/**
+ * Compact relative time for sync freshness: "just now", "5m ago", "2h ago",
+ * "3d ago". Pure (now injectable, unit tested).
+ */
+export function relativeTime(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return 'never';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return 'never';
+  const diffMin = Math.floor(Math.max(0, now.getTime() - t) / 60_000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const h = Math.floor(diffMin / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}

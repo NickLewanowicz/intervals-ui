@@ -120,6 +120,7 @@ const usersAdditions = [
   text('openrouter_api_key', 200, { hidden: true }),
   text('preferred_model', 120),
   select('units', ['km', 'mi']),
+  select('theme', ['system', 'light', 'dark']),
   text('athlete_profile', 4000),
 ];
 const existingFieldNames = new Set(users.fields.map((f) => f.name));

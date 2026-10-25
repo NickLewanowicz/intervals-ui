@@ -1,9 +1,12 @@
 /**
- * Settings: account, intervals.icu connection, AI preferences, units — and
- * the sync status readout. Secret fields are write-only (PB hidden fields);
- * blank means "keep current".
+ * Settings: account, intervals.icu connection, AI preferences, appearance
+ * (theme override), units — and the sync status readout (relative time).
+ * Secret fields are write-only (PB hidden fields); blank means "keep
+ * current", with a hold-to-reveal eye (FIX-8). The model picker shows the
+ * saved/default selection and tags the roster default (FIX-7).
  */
-import { MODEL_ROSTER } from '@intervals/core';
+import { DEFAULT_MODEL_ID, MODEL_ROSTER } from '@intervals/core';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -12,10 +15,20 @@ import { triggerSync } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { pb } from '@/lib/pb';
 import { useInvalidateMirrors, useSyncState } from '@/lib/queries';
-import { colors, fontSize, radius, spacing } from '@/theme';
+import { fontSize, layout, radius, spacing, type Palette, type ThemePreference } from '@/theme';
+import { useTheme } from '@/theme-context';
+import { relativeTime } from '@/lib/format';
+
+const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }> = [
+  { value: 'system', label: 'System', icon: 'contrast-outline' },
+  { value: 'light', label: 'Light', icon: 'sunny-outline' },
+  { value: 'dark', label: 'Dark', icon: 'moon-outline' },
+];
 
 export default function SettingsScreen() {
   const { user, signOut, refreshUser } = useAuth();
+  const { colors, preference, setPreference } = useTheme();
+  const s = styles(colors);
   const syncState = useSyncState();
   const invalidateMirrors = useInvalidateMirrors();
 
@@ -41,6 +54,9 @@ export default function SettingsScreen() {
   }, [user]);
 
   if (!user) return <Loading label="Loading settings…" />;
+
+  // FIX-7: an empty saved model MEANS the roster default — show it selected
+  const effectiveModel = model || DEFAULT_MODEL_ID;
 
   const save = async () => {
     setSaving(true);
@@ -86,21 +102,22 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
-      <Text style={styles.title}>Settings</Text>
+      <Text style={s.title}>Settings</Text>
 
       {/* Account */}
       <SectionTitle>Account</SectionTitle>
-      <Card style={styles.accountRow}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initial}</Text>
+      <Card style={s.accountRow}>
+        <View style={s.avatar}>
+          <Text style={s.avatarText}>{initial}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.userName}>{user.name || 'Athlete'}</Text>
-          <Text style={styles.userEmail}>{user.email}</Text>
+          <Text style={s.userName}>{user.name || 'Athlete'}</Text>
+          <Text style={s.userEmail}>{user.email}</Text>
         </View>
         <Button
           title="Sign out"
           variant="danger"
+          icon="log-out-outline"
           onPress={() => {
             signOut();
             router.replace('/sign-in');
@@ -126,10 +143,16 @@ export default function SettingsScreen() {
           placeholder="Leave blank to keep the saved key"
           autoCapitalize="none"
           secureTextEntry
-          hint="Write-only: the app stores it but never shows it again."
+          hint="Write-only: hold the eye to check what you typed."
         />
-        <Button title={testing ? 'Testing…' : 'Test connection'} variant="ghost" onPress={() => void testConnection()} loading={testing} />
-        {testMsg ? <Text style={styles.testMsg}>{testMsg}</Text> : null}
+        <Button
+          title={testing ? 'Testing…' : 'Test connection'}
+          variant="ghost"
+          icon="pulse-outline"
+          onPress={() => void testConnection()}
+          loading={testing}
+        />
+        {testMsg ? <Text style={s.testMsg}>{testMsg}</Text> : null}
         <SyncStatusCard state={syncState} />
       </Card>
 
@@ -145,22 +168,31 @@ export default function SettingsScreen() {
           secureTextEntry
           hint="BYO key — openrouter.ai/keys. The app never sees the key the worker uses."
         />
-        <View style={styles.modelList} accessibilityLabel="Model picker">
-          <Text style={styles.fieldLabel}>Model</Text>
+        <View style={s.modelList} accessibilityLabel="Model picker">
+          <Text style={s.fieldLabel}>Model</Text>
           {MODEL_ROSTER.map((m) => {
-            const selected = m.id === model;
+            const selected = m.id === effectiveModel;
+            const isDefault = m.id === DEFAULT_MODEL_ID;
             return (
               <Pressable
                 key={m.id}
-                accessibilityRole="button"
+                accessibilityRole="radio"
+                accessibilityState={selected ? { selected: true } : {}}
                 accessibilityLabel={`Model ${m.label}`}
                 onPress={() => setModel(m.id)}
-                style={[styles.modelRow, selected && styles.modelRowSelected]}
+                style={[s.modelRow, selected && s.modelRowSelected]}
               >
-                <Text style={styles.modelRadio}>{selected ? '●' : '○'}</Text>
-                <Text style={[styles.modelLabel, selected && { color: colors.text }]}>
-                  {m.label}
+                <View style={[s.radio, selected && { borderColor: colors.accent }]}>
+                  {selected ? <View style={[s.radioFill, { backgroundColor: colors.accent }]} /> : null}
+                </View>
+                <Text style={[s.modelLabel, selected && { color: colors.text }]} numberOfLines={2}>
+                  {m.label.split(' (')[0]}
                 </Text>
+                {isDefault ? (
+                  <View style={s.defaultChip}>
+                    <Text style={s.defaultChipText}>default</Text>
+                  </View>
+                ) : null}
               </Pressable>
             );
           })}
@@ -169,7 +201,9 @@ export default function SettingsScreen() {
           label="Athlete profile (given to the coach)"
           value={profile}
           onChangeText={setProfile}
-          placeholder={'Goals, current fitness, constraints…\ne.g. Marathon in 12 weeks; current fitness ~55; every Tuesday is run club.'}
+          placeholder={
+            'Goals, current fitness, constraints…\ne.g. Marathon in 12 weeks; current fitness ~55; every Tuesday is run club.'
+          }
           multiline
         />
       </Card>
@@ -177,17 +211,41 @@ export default function SettingsScreen() {
       {/* Preferences */}
       <SectionTitle>Preferences</SectionTitle>
       <Card>
-        <Text style={styles.fieldLabel}>Units</Text>
-        <View style={styles.unitsRow}>
+        <Text style={s.fieldLabel}>Appearance</Text>
+        <View style={s.unitsRow}>
+          {THEME_OPTIONS.map((opt) => {
+            const selected = preference === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                accessibilityRole="radio"
+                accessibilityState={selected ? { selected: true } : {}}
+                accessibilityLabel={`Theme ${opt.label}`}
+                onPress={() => setPreference(opt.value)}
+                style={[s.choiceBtn, selected && { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}
+              >
+                <Ionicons
+                  name={opt.icon}
+                  size={15}
+                  color={selected ? colors.accentText : colors.muted}
+                />
+                <Text style={[s.choiceText, selected && { color: colors.accentText }]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={s.fieldLabel}>Units</Text>
+        <View style={s.unitsRow}>
           {(['km', 'mi'] as const).map((u) => (
             <Pressable
               key={u}
-              accessibilityRole="button"
+              accessibilityRole="radio"
+              accessibilityState={units === u ? { selected: true } : {}}
               accessibilityLabel={`Units ${u}`}
               onPress={() => setUnits(u)}
-              style={[styles.unitsBtn, units === u && styles.unitsBtnSelected]}
+              style={[s.choiceBtn, units === u && { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}
             >
-              <Text style={[styles.unitsText, units === u && { color: colors.text }]}>
+              <Text style={[s.choiceText, units === u && { color: colors.accentText }]}>
                 {u === 'km' ? 'Kilometres (km)' : 'Miles (mi)'}
               </Text>
             </Pressable>
@@ -195,70 +253,95 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      {savedMsg ? <Text style={styles.saved}>{savedMsg}</Text> : null}
-      {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
-      <Button title={saving ? 'Saving…' : 'Save changes'} onPress={() => void save()} loading={saving} />
+      {savedMsg ? <Text style={s.saved}>{savedMsg}</Text> : null}
+      {saveError ? <Text style={s.error}>{saveError}</Text> : null}
+      <Button title={saving ? 'Saving…' : 'Save changes'} icon="checkmark-outline" onPress={() => void save()} loading={saving} />
     </Screen>
   );
 }
 
 function SyncStatusCard({ state }: { state: ReturnType<typeof useSyncState> }) {
-  if (state.isLoading) return <Text style={styles.syncLine}>Sync status: loading…</Text>;
-  if (state.isError) return <Text style={styles.syncLine}>Sync status: unavailable</Text>;
+  const { colors } = useTheme();
+  if (state.isLoading) return <Text style={styles(colors).syncLine}>Sync status: loading…</Text>;
+  if (state.isError) return <Text style={styles(colors).syncLine}>Sync status: unavailable</Text>;
   const row = state.data;
-  if (!row) return <Text style={styles.syncLine}>Sync status: never synced</Text>;
-  const when = row.lastSync ? new Date(row.lastSync).toLocaleString() : 'unknown';
+  if (!row) return <Text style={styles(colors).syncLine}>Sync status: never synced</Text>;
+  // relative ("2h ago") so sync freshness reads at a glance
+  const when = row.lastSync ? relativeTime(row.lastSync) : 'unknown';
   return (
-    <Text style={styles.syncLine}>
+    <Text style={styles(colors).syncLine}>
       Sync status: {row.status}
-      {row.status === 'error' && row.error ? ` (${row.error.slice(0, 120)})` : ''} · last sync {when}
+      {row.status === 'error' && row.error ? ` (${row.error.slice(0, 120)})` : ''} · synced {when}
     </Text>
   );
 }
 
-const styles = StyleSheet.create({
-  title: { color: colors.text, fontSize: fontSize.title, fontWeight: '700' },
-  accountRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { color: colors.accent, fontSize: fontSize.h, fontWeight: '700' },
-  userName: { color: colors.text, fontSize: fontSize.body, fontWeight: '600' },
-  userEmail: { color: colors.muted, fontSize: fontSize.small },
-  testMsg: { color: colors.muted, fontSize: fontSize.small },
-  syncLine: { color: colors.muted, fontSize: fontSize.tiny },
-  fieldLabel: { color: colors.muted, fontSize: fontSize.small },
-  modelList: { gap: spacing.xs },
-  modelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: spacing.sm + 2,
-    borderRadius: radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  modelRowSelected: { borderColor: colors.accent },
-  modelRadio: { color: colors.accent, fontSize: fontSize.small },
-  modelLabel: { color: colors.muted, fontSize: fontSize.small, flexShrink: 1 },
-  unitsRow: { flexDirection: 'row', gap: spacing.sm },
-  unitsBtn: {
-    flex: 1,
-    padding: spacing.sm + 2,
-    borderRadius: radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  unitsBtnSelected: { borderColor: colors.accent },
-  unitsText: { color: colors.muted, fontSize: fontSize.small, fontWeight: '600' },
-  saved: { color: colors.accent, fontSize: fontSize.small, textAlign: 'center' },
-  error: { color: colors.danger, fontSize: fontSize.small, textAlign: 'center' },
-});
+const styles = (p: Palette) =>
+  StyleSheet.create({
+    title: { color: p.text, fontSize: fontSize.title, fontWeight: '700' },
+    accountRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: p.accentSoft,
+      borderWidth: 1,
+      borderColor: p.borderGlass,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarText: { color: p.accentText, fontSize: fontSize.h, fontWeight: '700' },
+    userName: { color: p.text, fontSize: fontSize.body, fontWeight: '600' },
+    userEmail: { color: p.muted, fontSize: fontSize.small },
+    testMsg: { color: p.muted, fontSize: fontSize.small },
+    syncLine: { color: p.muted, fontSize: fontSize.tiny },
+    fieldLabel: { color: p.muted, fontSize: fontSize.small },
+    modelList: { gap: spacing.xs },
+    modelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.sm + 2,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: p.border,
+      minHeight: layout.minTouch - 4,
+    },
+    modelRowSelected: { borderColor: p.accent, backgroundColor: p.accentSoft },
+    radio: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      borderWidth: 1.5,
+      borderColor: p.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    radioFill: { width: 10, height: 10, borderRadius: 5 },
+    modelLabel: { color: p.muted, fontSize: fontSize.small, flexShrink: 1 },
+    defaultChip: {
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.border,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      backgroundColor: p.bg,
+    },
+    defaultChipText: { color: p.muted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+    unitsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+    choiceBtn: {
+      flex: 1,
+      padding: spacing.sm + 2,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: p.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      gap: spacing.xs + 2,
+      minHeight: layout.minTouch - 4,
+    },
+    choiceText: { color: p.muted, fontSize: fontSize.small, fontWeight: '600' },
+    saved: { color: p.success, fontSize: fontSize.small, textAlign: 'center' },
+    error: { color: p.danger, fontSize: fontSize.small, textAlign: 'center' },
+  });

@@ -1,22 +1,86 @@
 /**
  * Authenticated shell: guards on the PB session, then Calendar/Coach/Settings
- * tabs. Redirect happens post-mount so static web export stays renderable.
+ * tabs behind a floating glass tab bar (viet-study chassis: inset pill bar,
+ * filled active pill, icons + labels).
  */
+import { Ionicons } from '@expo/vector-icons';
 import { router, Tabs } from 'expo-router';
+import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GlassBar } from '@/components/glass';
+import { PressableScale } from '@/components/motion';
 import { useAuth } from '@/lib/auth';
 import { usePendingProposals } from '@/lib/queries';
-import { colors, fontSize, spacing } from '@/theme';
+import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
+import { useTheme } from '@/theme-context';
 
-/** placeholder icon (text labels only for now — the vision pass adds icons) */
-function iconStub(): React.JSX.Element | null {
-  return null;
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const TAB_ICONS: Record<string, { on: IconName; off: IconName }> = {
+  calendar: { on: 'calendar', off: 'calendar-outline' },
+  coach: { on: 'chatbubbles', off: 'chatbubbles-outline' },
+  settings: { on: 'settings', off: 'settings-outline' },
+};
+
+function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const s = styles(colors);
+
+  return (
+    <View
+      pointerEvents="box-none"
+      style={[styles2.tabWrap, { bottom: layout.tabBarBottom + insets.bottom }]}
+    >
+      <GlassBar edge="none" floating style={[s.tabBar, styles2.tabBarConstrained]}>
+        {state.routes.map((route, i) => {
+          const { options } = descriptors[route.key]!;
+          const focused = state.index === i;
+          const icons = TAB_ICONS[route.name] ?? { on: 'ellipse', off: 'ellipse-outline' };
+          const label = options.title ?? route.name;
+          const badge = typeof options.tabBarBadge === 'number' ? options.tabBarBadge : 0;
+          const tint = focused ? colors.onAccent : colors.muted;
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!focused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+          return (
+            <PressableScale
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={focused ? { selected: true } : {}}
+              accessibilityLabel={label}
+              onPress={onPress}
+              style={[s.tab, focused && [s.tabActive, { backgroundColor: colors.accent }]]}
+            >
+              <Ionicons name={focused ? icons.on : icons.off} size={19} color={tint} />
+              <Text style={[s.tabLabel, { color: tint }]} numberOfLines={1}>
+                {label}
+              </Text>
+              {badge > 0 ? (
+                <View style={[s.tabBadge, focused && { borderColor: colors.onAccent }]}>
+                  <Text style={[s.tabBadgeText, { color: focused ? colors.onAccent : colors.accentText }]}>
+                    {badge}
+                  </Text>
+                </View>
+              ) : null}
+            </PressableScale>
+          );
+        })}
+      </GlassBar>
+    </View>
+  );
 }
 
 export default function AppLayout() {
   const { ready, user } = useAuth();
+  const { colors } = useTheme();
   const pending = usePendingProposals();
+  const s = styles(colors);
 
   useEffect(() => {
     if (ready && !user) router.replace('/sign-in');
@@ -24,9 +88,9 @@ export default function AppLayout() {
 
   if (!ready || !user) {
     return (
-      <View style={styles.guard}>
+      <View style={[s.guard, { backgroundColor: colors.bg }]}>
         <ActivityIndicator color={colors.muted} />
-        <Text style={styles.guardText}>Restoring session…</Text>
+        <Text style={[s.guardText, { color: colors.muted }]}>Restoring session…</Text>
       </View>
     );
   }
@@ -34,46 +98,70 @@ export default function AppLayout() {
   const pendingCount = pending.data?.length ?? 0;
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: colors.text,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarLabelStyle: styles.tabLabel,
-        sceneStyle: { backgroundColor: colors.bg },
-      }}
-    >
-      <Tabs.Screen
-        name="calendar"
-        options={{ title: 'Calendar', tabBarIcon: iconStub }}
-      />
-      <Tabs.Screen
-        name="coach"
-        options={{
-          title: 'Coach',
-          tabBarIcon: iconStub,
-          tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <Tabs
+        tabBar={(props) => <FloatingTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+          sceneStyle: { backgroundColor: 'transparent' },
         }}
-      />
-      <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: iconStub }} />
-    </Tabs>
+      >
+        <Tabs.Screen name="calendar" options={{ title: 'Calendar' }} />
+        <Tabs.Screen
+          name="coach"
+          options={{ title: 'Coach', tabBarBadge: pendingCount > 0 ? pendingCount : undefined }}
+        />
+        <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
+      </Tabs>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  guard: {
-    flex: 1,
-    backgroundColor: colors.bg,
+const styles = (p: Palette) =>
+  StyleSheet.create({
+    guard: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+    guardText: { fontSize: fontSize.body },
+    tabBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      height: layout.tabBarHeight,
+      paddingHorizontal: spacing.sm + 2,
+      gap: spacing.xs,
+    },
+    tab: {
+      flex: 1,
+      height: layout.tabBarHeight - spacing.md,
+      borderRadius: radius.xl - spacing.xs,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.sm,
+    },
+    tabActive: {},
+    tabLabel: { fontSize: fontSize.small, fontWeight: '600', flexShrink: 1 },
+    tabBadge: {
+      minWidth: 18,
+      height: 18,
+      borderRadius: 9,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.borderGlass,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+      backgroundColor: p.card,
+    },
+    tabBadgeText: { fontSize: 10, fontWeight: '700' },
+  });
+
+/** Theme-independent layout for the floating bar. */
+const styles2 = StyleSheet.create({
+  tabWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: layout.tabBarBottom,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
   },
-  guardText: { color: colors.muted, fontSize: fontSize.body },
-  tabBar: {
-    backgroundColor: colors.card,
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  tabLabel: { fontSize: fontSize.small, fontWeight: '600' },
+  tabBarConstrained: { width: '100%', maxWidth: 480 },
 });

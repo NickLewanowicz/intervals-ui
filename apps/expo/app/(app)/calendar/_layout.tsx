@@ -4,10 +4,9 @@
  */
 import { Stack } from 'expo-router';
 import React from 'react';
-import { colors } from '@/theme';
+import { useTheme } from '@/theme-context';
 
 export default function CalendarTabLayout() {
-  return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
-  );
+  const { colors } = useTheme();
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />;
 }
