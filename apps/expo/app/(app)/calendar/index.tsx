@@ -1,32 +1,47 @@
 /**
- * THE core screen. Round-11 "calendar home v2" layout (design spec
- * docs/design/calendar-home-v2-spec.md):
- * - ONE hero glass card at the top (HeroCard.tsx): controls row + merged
- *   summary tile strip + verdict + details drawer — the old floating pill
- *   nav and the stats card are merged, killing the wasted middle space.
- * - Page rhythm from theme.pageSpacing: hero, then the window sheet.
- * - Week view: a single "week sheet" — 7 day rows, tap opens day detail.
- * - Month view: tap selects a day (ring) and its entries render in a panel
- *   BELOW the grid (selection persists across month navigation, clamped to
- *   the month); long-press or the panel chevron opens the full day route.
+ * THE core screen. Round-13 "week view v2" layout (design spec
+ * docs/design/calendar-week-v2-spec.md) on the round-11 hero chassis:
+ * - HeroCard (untouched): controls row + merged summary tiles + verdict +
+ *   details drawer.
+ * - Week view: day-strip pills (Mon–Sun with recorded/planned/race/today
+ *   markers — tap selects + scrolls the day into view), then one week sheet
+ *   of titled DayCards (rollup chips) whose runs render as RunCards with
+ *   intensity edges, status chips and labeled metric grids (no dot-lines).
+ * - Divergent detail flows: tapping a run/day opens the day detail NEXT TO
+ *   the list on desktop ≥900px (DetailSidePanel animates in to the right;
+ *   the list column narrows) and as a bottom sheet on mobile/native
+ *   (DetailSheet, ProposalModal chassis + drag-to-close). The /calendar/day
+ *   route stays for deep links ("Open full").
+ * - Month view: tap selects a day (ring) and its entries (RunCards) render
+ *   in a panel BELOW the grid; long-press or the panel chevron opens the
+ *   full day route.
  */
 import {
   averagePaceMinPerKm,
   buildDayCells,
-  isRaceEvent,
   weeklyStats,
   type DayCell,
   type WeeklyStats,
 } from '@intervals/core';
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassCard } from '@/components/glass';
 import { PressableScale, SlideFadeIn } from '@/components/motion';
 import { Badge, Empty, ErrorBox, IconButton, Loading } from '@/components/ui';
 import HeroCard from './HeroCard';
+import { DayCard, DayStrip, RunList } from './WeekCards';
+import DetailSidePanel, { PANEL_W } from './DetailSidePanel';
+import DetailSheet from './DetailSheet';
 import { triggerSync } from '@/lib/api';
 import {
   addDays,
@@ -44,9 +59,8 @@ import {
   weekRangeLabel,
   weekRangeLabelShort,
   weekWindow,
-  weekdayIndex,
 } from '@/lib/dates';
-import { activityLine, eventLine, relativeTime } from '@/lib/format';
+import { relativeTime } from '@/lib/format';
 import { useCalendarWindow, useInvalidateMirrors, useSyncState, useThresholdPace, useWellness } from '@/lib/queries';
 import { fontSize, layout, pageSpacing, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
@@ -54,15 +68,22 @@ import { useTheme } from '@/theme-context';
 /** Host node type accepted by measureLayout (derived, no deep RN import). */
 type HostNode = Parameters<InstanceType<typeof View>['measureLayout']>[0];
 
+/** Viewport at which the detail flips from bottom sheet to side panel. */
+const WIDE_BREAKPOINT = 900;
+
 export default function CalendarScreen() {
   const { colors } = useTheme();
   const s = styles(colors);
   const insets = useSafeAreaInsets();
+  const { width: winW } = useWindowDimensions();
+  const wide = winW >= WIDE_BREAKPOINT;
   const today = todayISO();
   const [view, setView] = useState<'week' | 'month'>('week');
   const [weekStart, setWeekStart] = useState(() => startOfWeek(todayISO()));
   const [monthAnc, setMonthAnc] = useState(() => monthAnchor(todayISO()));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  /** The ONE open day detail (side panel on desktop, sheet on mobile/native). */
+  const [detailDate, setDetailDate] = useState<string | null>(null);
 
   const week = weekWindow(weekStart);
   const grid = useMemo(() => monthGrid(monthAnc), [monthAnc]);
@@ -85,20 +106,19 @@ export default function CalendarScreen() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   // persona finding #9: the daily loop must not start with a hunt for today.
-  // Scroll today's day row into view on mount / week change (week view only).
+  // Scroll today's day card into view on mount / week change (week view only).
   const scrollRef = useRef<ScrollView>(null);
   const cardRefs = useRef(new Map<string, View | null>());
-  const weekDatesList = weekDates(weekStart);
+  const weekDatesList = useMemo(() => weekDates(weekStart), [weekStart]);
   const todayInWeek = weekDatesList.includes(today);
   const [measureTick, setMeasureTick] = useState(0);
   const noteCardLayout = (date: string) => () => {
     if (date === today) setMeasureTick((t) => t + 1);
   };
 
-  useEffect(() => {
-    if (view !== 'week' || isLoading || isError || !todayInWeek) return;
+  const scrollToDate = (date: string) => {
     const scroller = scrollRef.current;
-    const card = cardRefs.current.get(today);
+    const card = cardRefs.current.get(date);
     if (!scroller || !card) return;
     const rel = scroller.getNativeScrollRef() ?? (scroller as unknown as HostNode);
     card.measureLayout(
@@ -108,7 +128,36 @@ export default function CalendarScreen() {
       },
       () => undefined, // not laid out yet — the next layout tick retries
     );
+  };
+
+  useEffect(() => {
+    if (view !== 'week' || isLoading || isError || !todayInWeek) return;
+    scrollToDate(today);
+    // measureTick retries when today's card relayouts (data/load transitions)
   }, [view, weekStart, isLoading, isError, data, today, todayInWeek, measureTick]);
+
+  // day pills: tap = select + scroll the day card into view (spec §1)
+  const onPillSelect = (date: string) => {
+    setSelectedDate(date);
+    scrollToDate(date);
+  };
+
+  // detail flows (spec §3): one detail at a time; the panel progress drives
+  // BOTH the panel's slide-in and the week column's narrowing.
+  const panelProgress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(panelProgress, {
+      toValue: detailDate != null && wide ? 1 : 0,
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false, // width/maxWidth are layout props
+    }).start();
+  }, [detailDate, wide, panelProgress]);
+
+  // navigating weeks (or switching views) closes a detail that left the window
+  useEffect(() => {
+    if (detailDate && !weekDatesList.includes(detailDate)) setDetailDate(null);
+  }, [weekDatesList, detailDate]);
 
   // month view: keep a sensible selection — today when present, else the 1st;
   // an existing selection that lives in the month survives navigation.
@@ -124,6 +173,7 @@ export default function CalendarScreen() {
   const events = data?.events ?? [];
   const activities = data?.activities ?? [];
   const cells = useMemo(() => buildDayCells(events, activities), [events, activities]);
+  const cellFor = (date: string): DayCell => cells.get(date) ?? { date, events: [], activities: [] };
   // round-8 FIX-4: planned events often declare time but no distance — estimate
   // from the athlete's recent actual pace (threshold pace as fallback).
   const recentPace = useMemo(() => averagePaceMinPerKm(activities), [activities]);
@@ -220,6 +270,16 @@ export default function CalendarScreen() {
         : monthLabelShort(monthAnc);
   const sundayLabel = `Sun ${addDays(startOfWeek(today), 6).slice(8, 10)}`;
 
+  // the window sheet + detail side panel share one row; the row's max width
+  // animates so opening the panel GROWS the layout rightward while the list
+  // column narrows (both driven by the same 0..1 progress).
+  const rowMax = wide
+    ? panelProgress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [layout.maxW, layout.maxW + PANEL_W + spacing.lg],
+      })
+    : layout.maxW;
+
   return (
     <View style={s.page}>
       {/* scrolling body — the hero scrolls with the sheet so small viewports
@@ -227,7 +287,15 @@ export default function CalendarScreen() {
       <ScrollView
         ref={scrollRef}
         style={s.scroll}
-        contentContainerStyle={[s.scrollContent, { paddingTop: insets.top + spacing.sm + pageSpacing.navToContent }]}
+        contentContainerStyle={[
+          s.scrollContent,
+          {
+            paddingTop: insets.top + spacing.sm + pageSpacing.navToContent,
+            // desktop: reserve room for the detail side panel (the window row
+            // itself animates 860 → 860+panel as the panel opens)
+            maxWidth: wide ? layout.maxW + PANEL_W + spacing.lg : layout.maxW,
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         <View style={s.section}>
@@ -263,197 +331,144 @@ export default function CalendarScreen() {
             ) : null}
           </View>
 
-          <SlideFadeIn dep={navKey} direction={dir}>
-            {firstLoad ? (
-              <Loading label="Loading calendar…" />
-            ) : isError ? (
-              <ErrorBox
-                message={`Could not load calendar: ${(error as Error)?.message ?? 'error'}`}
-                onRetry={() => void refetch()}
-              />
-            ) : view === 'week' ? (
-            /* ONE surface: day rows with hairline separators (no floating cards) */
-            <GlassCard style={s.weekGroup} testID="week-group">
-              {weekDatesList.map((date, i) => (
-                <Fragment key={date}>
-                  {i > 0 ? <View style={s.rowSep} /> : null}
-                  <View
-                    ref={(v) => {
-                      cardRefs.current.set(date, v);
-                    }}
-                    onLayout={noteCardLayout(date)}
-                  >
-                    <DayRow
-                      date={date}
-                      cell={cells.get(date) ?? { date, events: [], activities: [] }}
-                      today={date === today}
-                      onOpen={goDay}
-                    />
-                  </View>
-                </Fragment>
-              ))}
-            </GlassCard>
-          ) : (
-            <GlassCard style={s.monthCard} testID="month-card">
-              <View style={s.monthHeaderRow}>
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-                  <Text key={d} style={s.monthDow}>
-                    {d}
-                  </Text>
-                ))}
-              </View>
-              {grid.weeks.map((w) => (
-                <View key={w[0]} style={s.monthWeekRow}>
-                  {w.map((date) => {
-                    const cell = cells.get(date) ?? { date, events: [], activities: [] };
-                    return (
-                      <MonthCell
-                        key={date}
-                        date={date}
-                        cell={cell}
-                        inMonth={isInMonth(date, monthAnc)}
-                        today={date === today}
-                        selected={selectedDate === date}
-                        onSelect={() => setSelectedDate(date)}
-                        onOpen={() => goDay(date)}
-                      />
-                    );
-                  })}
-                </View>
-              ))}
-              {/* FIX-12 legend: planned / recorded / race are eye-distinguishable */}
-              <View style={s.legendRow}>
-                <LegendDot kind="plan" />
-                <Text style={s.legendText}>planned</Text>
-                <LegendDot kind="done" />
-                <Text style={s.legendText}>recorded</Text>
-                <LegendDot kind="race" />
-                <Text style={s.legendText}>race</Text>
-              </View>
-              {/* selected-day panel: the day's entries BELOW the grid, no navigation */}
-              {selectedDate ? (
-                <View style={s.dayPanel}>
-                  <View style={s.rowSep} />
-                  <View style={s.panelHead}>
-                    <Text style={s.panelTitle}>
-                      {`${dayLabel(selectedDate)} ${MONTHS[Number(selectedDate.slice(5, 7)) - 1]!.slice(0, 3)}`}
-                    </Text>
-                    {selectedDate === today ? <Badge label="today" tone="accent" /> : null}
-                    <View style={s.spring} />
-                    <IconButton
-                      icon="chevron-forward"
-                      label={`Open full day detail for ${dayLabel(selectedDate)}`}
-                      onPress={() => goDay(selectedDate)}
-                      size={15}
-                      hitSlop={8}
-                      style={s.panelOpenBtn}
-                    />
-                  </View>
-                  <DayEntries
-                    cell={cells.get(selectedDate) ?? { date: selectedDate, events: [], activities: [] }}
-                    emptyText="Rest day — nothing planned, nothing recorded."
+          <Animated.View style={[s.windowRow, { maxWidth: rowMax }]}>
+            <View style={s.windowCol}>
+              <SlideFadeIn dep={navKey} direction={dir}>
+                {firstLoad ? (
+                  <Loading label="Loading calendar…" />
+                ) : isError ? (
+                  <ErrorBox
+                    message={`Could not load calendar: ${(error as Error)?.message ?? 'error'}`}
+                    onRetry={() => void refetch()}
                   />
-                </View>
-              ) : null}
-            </GlassCard>
-          )}
-            {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
-              <Empty
-                message="No events in this window. Sync now, or ask your coach to plan something."
-                icon="calendar-clear-outline"
+                ) : view === 'week' ? (
+                  /* ONE surface: day pills + titled day cards (hairline-separated) */
+                  <GlassCard style={s.weekGroup} testID="week-group">
+                    <DayStrip
+                      dates={weekDatesList}
+                      cellOf={(d) => cells.get(d)}
+                      today={today}
+                      selected={selectedDate}
+                      onSelect={onPillSelect}
+                    />
+                    <View style={s.rowSep} />
+                    {weekDatesList.map((date, i) => (
+                      <Fragment key={date}>
+                        {i > 0 ? <View style={s.rowSep} /> : null}
+                        <View
+                          ref={(v) => {
+                            cardRefs.current.set(date, v);
+                          }}
+                          onLayout={noteCardLayout(date)}
+                        >
+                          <DayCard
+                            date={date}
+                            cell={cellFor(date)}
+                            today={today}
+                            paceMinPerKm={pace}
+                            selected={selectedDate === date}
+                            onOpen={setDetailDate}
+                          />
+                        </View>
+                      </Fragment>
+                    ))}
+                  </GlassCard>
+                ) : (
+                  <GlassCard style={s.monthCard} testID="month-card">
+                    <View style={s.monthHeaderRow}>
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+                        <Text key={d} style={s.monthDow}>
+                          {d}
+                        </Text>
+                      ))}
+                    </View>
+                    {grid.weeks.map((w) => (
+                      <View key={w[0]} style={s.monthWeekRow}>
+                        {w.map((date) => {
+                          const cell = cellFor(date);
+                          return (
+                            <MonthCell
+                              key={date}
+                              date={date}
+                              cell={cell}
+                              inMonth={isInMonth(date, monthAnc)}
+                              today={date === today}
+                              selected={selectedDate === date}
+                              onSelect={() => setSelectedDate(date)}
+                              onOpen={() => goDay(date)}
+                            />
+                          );
+                        })}
+                      </View>
+                    ))}
+                    {/* FIX-12 legend: planned / recorded / race are eye-distinguishable */}
+                    <View style={s.legendRow}>
+                      <LegendDot kind="plan" />
+                      <Text style={s.legendText}>planned</Text>
+                      <LegendDot kind="done" />
+                      <Text style={s.legendText}>recorded</Text>
+                      <LegendDot kind="race" />
+                      <Text style={s.legendText}>race</Text>
+                    </View>
+                    {/* selected-day panel: the day's runs BELOW the grid, no navigation */}
+                    {selectedDate ? (
+                      <View style={s.dayPanel}>
+                        <View style={s.rowSep} />
+                        <View style={s.panelHead}>
+                          <Text style={s.panelTitle}>
+                            {`${dayLabel(selectedDate)} ${MONTHS[Number(selectedDate.slice(5, 7)) - 1]!.slice(0, 3)}`}
+                          </Text>
+                          {selectedDate === today ? <Badge label="today" tone="accent" /> : null}
+                          <View style={s.spring} />
+                          <IconButton
+                            icon="chevron-forward"
+                            label={`Open full day detail for ${dayLabel(selectedDate)}`}
+                            onPress={() => goDay(selectedDate)}
+                            size={15}
+                            hitSlop={8}
+                            style={s.panelOpenBtn}
+                          />
+                        </View>
+                        <RunList
+                          cell={cellFor(selectedDate)}
+                          today={today}
+                          paceMinPerKm={pace}
+                          onPressRun={() => setDetailDate(selectedDate)}
+                        />
+                      </View>
+                    ) : null}
+                  </GlassCard>
+                )}
+                {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
+                  <Empty
+                    message="No events in this window. Sync now, or ask your coach to plan something."
+                    icon="calendar-clear-outline"
+                  />
+                ) : null}
+              </SlideFadeIn>
+            </View>
+            {wide ? (
+              <DetailSidePanel
+                date={detailDate}
+                cellFor={cellFor}
+                today={today}
+                progress={panelProgress}
+                onClose={() => setDetailDate(null)}
               />
             ) : null}
-          </SlideFadeIn>
+          </Animated.View>
         </View>
       </ScrollView>
+      {/* mobile + native: the same detail as a bottom sheet (spec §3) */}
+      {!wide && detailDate ? (
+        <DetailSheet date={detailDate} cellFor={cellFor} today={today} onClose={() => setDetailDate(null)} />
+      ) : null}
     </View>
-  );
-}
-
-/** Entries of one day: planned events (merged with their recorded actual) + lone activities. */
-function DayEntries({ cell, emptyText = 'Rest day' }: { cell: DayCell; emptyText?: string }) {
-  const { colors } = useTheme();
-  const s = styles(colors);
-  const pairedActivityIds = new Set(
-    cell.activities.map((a) => a.paired_event_id).filter((x): x is number => typeof x === 'number'),
-  );
-  const pairedEvents = new Set(
-    cell.events.filter((e) => pairedActivityIds.has(e.id ?? -1)).map((e) => e.id),
-  );
-  const loneActivities = cell.activities.filter((a) => !pairedEvents.has(a.paired_event_id ?? -1));
-
-  if (cell.events.length === 0 && loneActivities.length === 0) {
-    return <Text style={s.dayEmpty}>{emptyText}</Text>;
-  }
-  return (
-    <View style={s.entries}>
-      {cell.events.map((e) => {
-        const actual = cell.activities.find((a) => a.paired_event_id === e.id);
-        const race = isRaceEvent(e);
-        return (
-          <View
-            key={`e${e.id ?? e.uid ?? e.start_date_local}`}
-            style={[s.entry, race && [s.entryRace, { borderLeftColor: colors.race }]]}
-          >
-            <View style={s.entryHead}>
-              {race ? <Badge label={`RACE ${e.category?.slice(5) ?? ''}`} tone="race" icon="flag" /> : null}
-              <Text style={s.entryName} numberOfLines={1}>
-                {e.name ?? 'Planned workout'}
-              </Text>
-              {actual ? <Ionicons name="checkmark-circle" size={14} color={colors.success} /> : null}
-            </View>
-            <Text style={s.entryMeta}>{eventLine(e)}</Text>
-            {actual ? <Text style={s.entryActual}>✓ {activityLine(actual)}</Text> : null}
-          </View>
-        );
-      })}
-      {loneActivities.map((a) => (
-        <View key={`a${a.id}`} style={s.entry}>
-          <View style={s.entryHead}>
-            <Text style={s.entryName} numberOfLines={1}>
-              {a.name ?? 'Activity'}
-            </Text>
-            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-          </View>
-          <Text style={s.entryMeta}>{activityLine(a)}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-/** One day row inside the week sheet (round 9: a row, not a floating card). */
-function DayRow({
-  date,
-  cell,
-  today,
-  onOpen,
-}: {
-  date: string;
-  cell: DayCell;
-  today: boolean;
-  onOpen: (date: string) => void;
-}) {
-  const { colors } = useTheme();
-  const s = styles(colors);
-  return (
-    <PressableScale
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${dayLabel(date)}`}
-      onPress={() => onOpen(date)}
-      style={[s.dayRow, today && s.dayRowToday]}
-    >
-      <View style={s.dayHead}>
-        <Text style={[s.dayName, today && { color: colors.accentText }]}>{dayLabel(date)}</Text>
-        {today ? <Badge label="today" tone="accent" /> : null}
-      </View>
-      <DayEntries cell={cell} />
-    </PressableScale>
   );
 }
 
 /**
- * Month cell (round 9): tap SELECTS — the day's entries show in the panel
+ * Month cell (round 9): tap SELECTS — the day's runs show in the panel
  * below the grid. Long-press (or the panel chevron) opens the full day route.
  */
 function MonthCell({
@@ -475,11 +490,11 @@ function MonthCell({
 }) {
   const { colors } = useTheme();
   const s = styles(colors);
-  const races = cell.events.filter(isRaceEvent).length;
+  const races = cell.events.filter((e) => (e.category ?? '').startsWith('RACE')).length;
   const plans = cell.events.length - races;
   const recs = cell.activities.length;
   return (
-    <Pressable
+    <PressableScale
       accessibilityRole="button"
       accessibilityState={selected ? { selected: true } : {}}
       accessibilityLabel={`${date}: ${cell.events.length} planned, ${cell.activities.length} recorded`}
@@ -503,7 +518,7 @@ function MonthCell({
           <View style={[s.dotDone, { backgroundColor: colors.text, borderColor: colors.text }]} />
         ) : null}
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -536,31 +551,22 @@ const styles = (p: Palette) =>
       paddingRight: spacing.lg,
       paddingBottom: spacing.xxxl + layout.tabBarHeight,
     },
-    // the section stack: hero (static) + sliding window sheet
+    // the section stack: hero (static) + sliding window sheet (+ detail panel)
     section: { gap: pageSpacing.sectionGap },
-    // --- week sheet: ONE containing card, hairline-separated rows ---
+    windowRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      width: '100%',
+      alignSelf: 'center',
+    },
+    windowCol: { flex: 1, minWidth: 0 },
+    // --- week sheet: ONE containing card, pills + hairline-separated cards ---
     weekGroup: { paddingVertical: pageSpacing.cardGap / 2, overflow: 'hidden' },
     rowSep: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: p.border,
       marginHorizontal: pageSpacing.rowPadX,
     },
-    dayRow: {
-      paddingHorizontal: pageSpacing.rowPadX,
-      paddingVertical: pageSpacing.rowPadY,
-      gap: spacing.xs,
-    },
-    dayRowToday: { backgroundColor: p.accentSoft },
-    dayHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    dayName: { color: p.text, fontSize: fontSize.body, fontWeight: '700' },
-    dayEmpty: { color: p.muted, fontSize: fontSize.small },
-    entries: { gap: spacing.sm + 2 },
-    entry: { gap: 1, paddingLeft: spacing.sm },
-    entryRace: { borderLeftWidth: 2 },
-    entryHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    entryName: { color: p.text, fontSize: fontSize.small + 1, fontWeight: '600', flexShrink: 1 },
-    entryMeta: { color: p.muted, fontSize: fontSize.small, fontVariant: ['tabular-nums'] },
-    entryActual: { color: p.accentText, fontSize: fontSize.small, fontVariant: ['tabular-nums'] },
     // --- month view (same padding system) ---
     monthCard: {
       gap: spacing.sm,
