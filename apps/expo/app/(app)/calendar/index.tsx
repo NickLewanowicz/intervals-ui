@@ -1,21 +1,18 @@
 /**
- * THE core screen. Round-9 layout system:
- * - ONE compact floating glass pill nav (two tight rows, ~40% shorter than
- *   the old stacked header — no dead vertical space).
- * - Page rhythm from theme.pageSpacing: nav → content, stats card → list,
- *   rows INSIDE one containing card with hairline separators (no more
- *   scattered floating day cards).
+ * THE core screen. Round-11 "calendar home v2" layout (design spec
+ * docs/design/calendar-home-v2-spec.md):
+ * - ONE hero glass card at the top (HeroCard.tsx): controls row + merged
+ *   summary tile strip + verdict + details drawer — the old floating pill
+ *   nav and the stats card are merged, killing the wasted middle space.
+ * - Page rhythm from theme.pageSpacing: hero, then the window sheet.
  * - Week view: a single "week sheet" — 7 day rows, tap opens day detail.
  * - Month view: tap selects a day (ring) and its entries render in a panel
  *   BELOW the grid (selection persists across month navigation, clamped to
  *   the month); long-press or the panel chevron opens the full day route.
- * - Stats card v2 (StatsCard.tsx): PRIMARY state + verdict, SECONDARY details.
  */
 import {
   averagePaceMinPerKm,
   buildDayCells,
-  formatDuration,
-  formatKm,
   isRaceEvent,
   weeklyStats,
   type DayCell,
@@ -26,10 +23,10 @@ import { router } from 'expo-router';
 import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GlassBar, GlassCard } from '@/components/glass';
+import { GlassCard } from '@/components/glass';
 import { PressableScale, SlideFadeIn } from '@/components/motion';
-import { Badge, Button, Empty, ErrorBox, IconButton, Loading } from '@/components/ui';
-import StatsCard from './StatsCard';
+import { Badge, Empty, ErrorBox, IconButton, Loading } from '@/components/ui';
+import HeroCard from './HeroCard';
 import { triggerSync } from '@/lib/api';
 import {
   addDays,
@@ -212,121 +209,69 @@ export default function CalendarScreen() {
   const goDay = (date: string) => router.push({ pathname: '/calendar/day', params: { date } });
 
   const lastSync = syncState.data?.lastSync ?? null;
-  const navTitle = view === 'week' ? weekRangeLabelShort(weekStart) : grid.label;
+  const navTitle = view === 'week' ? weekRangeLabelShort(weekStart) : monthLabelShort(monthAnc);
+  const scopeLabel =
+    view === 'week'
+      ? weekStart === startOfWeek(today)
+        ? 'This week'
+        : `Week of ${weekRangeLabel(weekStart).split(' – ')[0]}`
+      : monthAnc === monthAnchor(today)
+        ? 'This month'
+        : monthLabelShort(monthAnc);
   const sundayLabel = `Sun ${addDays(startOfWeek(today), 6).slice(8, 10)}`;
 
   return (
     <View style={s.page}>
-      {/* compact floating glass pill nav (round 9): nav row + view/sync row */}
-      <View style={[s.headerWrap, { paddingTop: insets.top + spacing.sm }]}>
-        <GlassBar edge="none" floating style={s.headerPill} testID="nav-pill">
-          <View style={s.headerRow}>
-            <IconButton
-              icon="chevron-back"
-              label="Previous"
-              onPress={() => step(-1)}
-              size={17}
-              hitSlop={7}
-              style={s.pillBtn}
-            />
-            <Text accessibilityRole="header" style={s.title} numberOfLines={1}>
-              {navTitle}
-            </Text>
-            <IconButton
-              icon="chevron-forward"
-              label="Next"
-              onPress={() => step(1)}
-              size={17}
-              hitSlop={7}
-              style={s.pillBtn}
-            />
-            <View style={s.spring} />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Go to today"
-              onPress={goToday}
-              hitSlop={8}
-              style={s.todayBtn}
-            >
-              <Text style={s.todayText}>Today</Text>
-            </Pressable>
-          </View>
-          <View style={s.headerRow}>
-            <View style={s.segmented}>
-              {(['week', 'month'] as const).map((v) => {
-                const active = view === v;
-                return (
-                  <Pressable
-                    key={v}
-                    accessibilityRole="button"
-                    accessibilityState={active ? { selected: true } : {}}
-                    accessibilityLabel={`${v} view`}
-                    onPress={() => setView(v)}
-                    style={[s.segBtn, active && { backgroundColor: colors.accent }]}
-                  >
-                    <Text style={[s.segText, { color: active ? colors.onAccent : colors.muted }]}>
-                      {v === 'week' ? 'Week' : 'Month'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <View style={s.spring} />
-            <IconButton
-              icon="sync"
-              label="Sync now"
-              onPress={() => void onSync()}
-              loading={syncing}
-              size={15}
-              hitSlop={10}
-              style={s.syncBtn}
-            />
-          </View>
-        </GlassBar>
-        {syncMsg ? (
-          <Text style={s.syncMsg} numberOfLines={1}>
-            {syncMsg}
-          </Text>
-        ) : null}
-      </View>
-
-      {/* scrolling body */}
+      {/* scrolling body — the hero scrolls with the sheet so small viewports
+          keep full access to the day rows */}
       <ScrollView
         ref={scrollRef}
         style={s.scroll}
-        contentContainerStyle={s.scrollContent}
+        contentContainerStyle={[s.scrollContent, { paddingTop: insets.top + spacing.sm + pageSpacing.navToContent }]}
         keyboardShouldPersistTaps="handled"
       >
-        <SlideFadeIn dep={navKey} direction={dir} style={s.section}>
-          <StatsCard
-            caption={
-              view === 'week'
-                ? `planned vs actual · week of ${weekRangeLabel(weekStart).split(' – ')[0]}`
-                : `planned vs actual · ${grid.label}`
-            }
-            stats={view === 'week' ? stats : monthStats}
-            showLongest={view === 'week'}
-            showZones={view === 'week'}
-            freshness={lastSync ? relativeTime(lastSync) : null}
-            onFreshnessPress={() => router.push('/settings')}
-            wellness={wellness.data ?? []}
-            wellnessLoading={!wellness.data && (wellness.isLoading || wellness.isFetching)}
-            today={today}
-            currentWeek={{
-              events: live.data?.events ?? [],
-              activities: live.data?.activities ?? [],
-              horizonLabel: sundayLabel,
-            }}
-          />
-
-          {firstLoad ? (
-            <Loading label="Loading calendar…" />
-          ) : isError ? (
-            <ErrorBox
-              message={`Could not load calendar: ${(error as Error)?.message ?? 'error'}`}
-              onRetry={() => void refetch()}
+        <View style={s.section}>
+          {/* ONE hero surface: controls + tile strip + verdict + drawer */}
+          <View>
+            <HeroCard
+              view={view}
+              title={navTitle}
+              scopeLabel={scopeLabel}
+              onPrev={() => step(-1)}
+              onNext={() => step(1)}
+              onToday={goToday}
+              onView={setView}
+              onSync={() => void onSync()}
+              syncing={syncing}
+              freshness={lastSync ? relativeTime(lastSync) : null}
+              onFreshnessPress={() => router.push('/settings')}
+              stats={view === 'week' ? stats : monthStats}
+              showZones={view === 'week'}
+              wellness={wellness.data ?? []}
+              wellnessLoading={!wellness.data && (wellness.isLoading || wellness.isFetching)}
+              today={today}
+              currentWeek={{
+                events: live.data?.events ?? [],
+                activities: live.data?.activities ?? [],
+                horizonLabel: sundayLabel,
+              }}
             />
-          ) : view === 'week' ? (
+            {syncMsg ? (
+              <Text style={s.syncMsg} numberOfLines={1}>
+                {syncMsg}
+              </Text>
+            ) : null}
+          </View>
+
+          <SlideFadeIn dep={navKey} direction={dir}>
+            {firstLoad ? (
+              <Loading label="Loading calendar…" />
+            ) : isError ? (
+              <ErrorBox
+                message={`Could not load calendar: ${(error as Error)?.message ?? 'error'}`}
+                onRetry={() => void refetch()}
+              />
+            ) : view === 'week' ? (
             /* ONE surface: day rows with hairline separators (no floating cards) */
             <GlassCard style={s.weekGroup} testID="week-group">
               {weekDatesList.map((date, i) => (
@@ -412,13 +357,14 @@ export default function CalendarScreen() {
               ) : null}
             </GlassCard>
           )}
-          {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
-            <Empty
-              message="No events in this window. Sync now, or ask your coach to plan something."
-              icon="calendar-clear-outline"
-            />
-          ) : null}
-        </SlideFadeIn>
+            {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
+              <Empty
+                message="No events in this window. Sync now, or ask your coach to plan something."
+                icon="calendar-clear-outline"
+              />
+            ) : null}
+          </SlideFadeIn>
+        </View>
       </ScrollView>
     </View>
   );
@@ -573,59 +519,14 @@ function LegendDot({ kind }: { kind: 'plan' | 'done' | 'race' }) {
 const styles = (p: Palette) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: p.bg },
-    // --- compact floating pill nav (round 9) ---
-    headerWrap: { paddingHorizontal: layout.tabBarInset },
-    headerPill: {
-      alignSelf: 'center',
-      width: '100%',
-      maxWidth: layout.maxW,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
-      gap: 2,
-    },
-    headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
-    pillBtn: { width: 30, height: 30, borderRadius: radius.sm + 2 },
-    title: {
-      color: p.text,
-      fontSize: fontSize.body,
-      fontWeight: '700',
-      flexShrink: 1,
-      fontVariant: ['tabular-nums'],
-    },
     spring: { flex: 1 },
-    todayBtn: {
-      minHeight: 30,
-      justifyContent: 'center',
-      paddingHorizontal: spacing.sm + 2,
-      borderRadius: radius.sm + 2,
-    },
-    todayText: { color: p.accentText, fontSize: fontSize.small, fontWeight: '700' },
-    segmented: {
-      flexDirection: 'row',
-      backgroundColor: p.bg,
-      borderRadius: radius.pill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.border,
-      padding: 2,
-      gap: 2,
-    },
-    segBtn: {
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.md - 2,
-      paddingVertical: 3,
-      alignItems: 'center',
-      justifyContent: 'center',
-      minWidth: 54,
-    },
-    segText: { fontSize: fontSize.tiny + 1, fontWeight: '600' },
-    syncBtn: { width: 26, height: 26, borderRadius: radius.sm + 1 },
     syncMsg: {
       color: p.muted,
       fontSize: fontSize.tiny,
       textAlign: 'center',
       marginTop: spacing.xs,
     },
-    // --- body rhythm (pageSpacing, round 9) ---
+    // --- body rhythm (pageSpacing; top inset padding applied inline) ---
     scroll: { flex: 1 },
     scrollContent: {
       maxWidth: layout.maxW,
@@ -633,10 +534,9 @@ const styles = (p: Palette) =>
       alignSelf: 'center',
       paddingLeft: spacing.lg,
       paddingRight: spacing.lg,
-      paddingTop: pageSpacing.navToContent,
       paddingBottom: spacing.xxxl + layout.tabBarHeight,
     },
-    // the section stack lives INSIDE the slide transition (one animated view)
+    // the section stack: hero (static) + sliding window sheet
     section: { gap: pageSpacing.sectionGap },
     // --- week sheet: ONE containing card, hairline-separated rows ---
     weekGroup: { paddingVertical: pageSpacing.cardGap / 2, overflow: 'hidden' },

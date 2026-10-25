@@ -3,12 +3,19 @@ import type { Activity, EventEx, WellnessDay } from '@intervals/core';
 import {
   buildVerdict,
   fmtHours,
-  gapLine,
+  formRingModel,
+  formTileModel,
+  fitnessTiles,
+  gapCopy,
   gapModel,
+  recoveryTiles,
   recoveryTrend,
   signedInt,
-  trendArrow,
+  summaryTiles,
+  tileHints,
+  trendDir,
   weekHonesty,
+  zoneFlagChips,
 } from '../stats-view';
 
 const ev = (over: Partial<EventEx>): EventEx => ({
@@ -37,16 +44,26 @@ const TREND = {
   detraining: false,
 };
 
-describe('signedInt / trendArrow / fmtHours', () => {
-  it('signs integers and picks arrows', () => {
+const WEEK = {
+  plannedDistanceM: 48_200,
+  plannedTimeSec: 23_400,
+  plannedLoad: 266,
+  actualDistanceM: 30_400,
+  actualTimeSec: 14_400,
+  actualLoad: 137,
+  longestRunM: 21_100,
+};
+
+describe('signedInt / trendDir / fmtHours', () => {
+  it('signs integers and picks directions', () => {
     expect(signedInt(-1.51)).toBe('-2');
     expect(signedInt(0.8)).toBe('+1');
     expect(signedInt(0)).toBe('0');
     expect(signedInt(-0.2)).toBe('0');
-    expect(trendArrow(1.2)).toBe('▲');
-    expect(trendArrow(-1.2)).toBe('▼');
-    expect(trendArrow(0.04)).toBe('→');
-    expect(trendArrow(null)).toBe('→');
+    expect(trendDir(1.2)).toBe('up');
+    expect(trendDir(-1.2)).toBe('down');
+    expect(trendDir(0.04)).toBe('flat');
+    expect(trendDir(null)).toBe('flat');
     expect(fmtHours(27000)).toBe('7h30m');
   });
 });
@@ -76,32 +93,210 @@ describe('buildVerdict (spec §3 templates)', () => {
     expect(buildVerdict({ ...TREND, formDelta7: 3 }, 0)).toBe('Form -2, trending up');
     expect(buildVerdict({ ...TREND, formDelta7: null }, 0)).toBe('Form -2, steady');
   });
+
+  it('positive form keeps the explicit + sign (spec example: "Form +2")', () => {
+    expect(buildVerdict({ ...TREND, form: 2.4 }, 137)).toBe(
+      'Form +2, steady · hold-flat ≈ 307/wk, you\'re at 137',
+    );
+  });
 });
 
-describe('gapModel + gapLine (spec §2 card copy)', () => {
-  it('quotes hold-flat vs planned with the projection (owner example shape)', () => {
-    // live athlete: hold-flat 307/wk (44/day); planned 266 → 41 under;
-    // remaining loads 38/day × 2 days
-    const g = gapModel(TREND, [38, 38], 266);
-    expect(g.holdWeekly).toBe(307);
-    expect(g.holdDaily).toBe(44);
-    expect(g.gapWeekly).toBe(41);
-    expect(g.projected).toBe(true);
-    const line = gapLine(g, 'Sun 25');
-    expect(line).toContain('Hold-flat ≈ 307/wk (44/day)');
-    expect(line).toContain('planned 266 → 41 under');
-    expect(line).toContain('form -2 → ');
-    expect(line).toContain('by Sun 25 (est)');
+describe('summaryTiles (design spec §2: big actual, muted planned sub-chip)', () => {
+  it('actual value with planned sub, estimate marked with ≈', () => {
+    const tiles = summaryTiles({
+      ...WEEK,
+      plannedDistanceEstimated: true,
+    });
+    expect(tiles.map((t) => t.id)).toEqual(['distance', 'time', 'load']);
+    const dist = tiles[0]!;
+    expect(dist.label).toBe('Distance');
+    expect(dist.value).toBe('30.4km');
+    expect(dist.sub).toEqual({ text: 'planned ≈48.2km', tone: 'neutral' });
+    expect(tiles[1]!.value).toBe('4h00m');
+    expect(tiles[1]!.sub!.text).toBe('planned 6h30m');
+    expect(tiles[2]!.value).toBe('137');
+    expect(tiles[2]!.sub).toEqual({ text: 'planned 266', tone: 'neutral' });
   });
 
-  it('nothing planned says so; week over → no projection clause', () => {
-    expect(gapLine(gapModel(TREND, [], 0), 'Sun 25')).toBe(
-      'Hold-flat ≈ 307/wk (44/day) · nothing planned this week',
-    );
+  it('zero actual reads as an em dash and zero planned drops the sub-chip', () => {
+    const tiles = summaryTiles({ ...WEEK, actualLoad: 0, plannedLoad: 0, longestRunM: 0 });
+    expect(tiles[2]!.value).toBe('—');
+    expect(tiles[2]!.sub).toBeNull();
+  });
+});
+
+describe('tileHints (definitions live in tooltips)', () => {
+  it('carries the estimation + longest-run copy on distance, none when unneeded', () => {
+    const hints = tileHints(WEEK);
+    expect(hints.distance).toContain('Longest run this week: 21.1km');
+    expect(hints.time).toBeNull();
+    expect(hints.load).toContain('TRIMP');
+
+    const est = tileHints({ ...WEEK, plannedDistanceEstimated: true, plannedTimeEstimated: true });
+    expect(est.distance).toContain('estimated from planned time');
+    expect(est.time).toContain('pace is estimated');
+  });
+});
+
+describe('formRingModel / formTileModel (design spec §2 ring)', () => {
+  it('maps the fresh/fatigued band onto a 0..1 sweep with tone', () => {
+    expect(formRingModel(30)).toEqual({ fraction: 1, word: 'very fresh', tone: 'better' });
+    expect(formRingModel(-30).fraction).toBe(0);
+    expect(formRingModel(-31).fraction).toBe(0);
+    expect(formRingModel(-1.51).fraction).toBeCloseTo(28.49 / 60, 5);
+    expect(formRingModel(-1.51).word).toBe('neutral');
+    expect(formRingModel(-40).tone).toBe('worse');
+    expect(formRingModel(10).tone).toBe('better');
+  });
+
+  it('tile shows signed form + weekly direction chip; loading state is dots', () => {
+    const t = formTileModel(TREND, false)!;
+    expect(t.value).toBe('-2');
+    expect(t.valueTone).toBe('neutral');
+    expect(t.sub!.dir).toBe('flat'); // |0.8| < 1 → steady
+    expect(t.sub!.text).toBe('neutral · steady');
+
+    const down = formTileModel({ ...TREND, formDelta7: -2.4 }, false)!;
+    expect(down.sub!.dir).toBe('down');
+    expect(down.sub!.tone).toBe('worse');
+    expect(down.sub!.text).toBe('neutral · -2/wk');
+
+    expect(formTileModel(null, false)).toBeNull();
+    expect(formTileModel(null, true)!.value).toBe('…');
+  });
+});
+
+describe('fitnessTiles (CTL/ATL mini-tiles, no arrows)', () => {
+  it('1dp values + weekly delta chips with training semantics', () => {
+    const [ctl, atl] = fitnessTiles(TREND);
+    expect(ctl!.value).toBe('41.9');
+    expect(ctl!.sub!.text).toBe('0/wk'); // -0.4 rounds to 0 → signedInt keeps "0"
+    expect(ctl!.sub!.tone).toBe('worse'); // small losses still count against fitness
+    expect(atl!.value).toBe('43.4');
+    expect(atl!.sub!.dir).toBe('down');
+    expect(atl!.sub!.tone).toBe('better'); // fatigue falling is good
+  });
+
+  it('detraining flags the CTL tooltip, not exposed prose', () => {
+    const [ctl] = fitnessTiles({ ...TREND, detraining: true });
+    expect(ctl!.hint).toContain('detraining, not a taper');
+    const [plain] = fitnessTiles(TREND);
+    expect(plain!.hint).toContain('42-day');
+  });
+});
+
+describe('gapCopy (design spec §4: three chips + tooltip definition)', () => {
+  it('Hold-flat / You / Gap chips with tone; definition + projection in tooltip', () => {
+    const g = gapModel(TREND, [38, 38], 266);
+    const copy = gapCopy(g, 'Sun 25');
+    expect(copy.chips.map((c) => c.label)).toEqual(['Hold-flat', 'You', 'Gap']);
+    expect(copy.chips[0]!.value).toBe('307/wk');
+    expect(copy.chips[1]!.value).toBe('266');
+    expect(copy.chips[2]!.value).toBe('+41');
+    expect(copy.chips[2]!.tone).toBe('neutral');
+    expect(copy.tooltip[0]).toContain('Hold-flat = the weekly load');
+    const joined = copy.tooltip.join(' ');
+    expect(joined).toContain('By Sun 25 at this pace');
+    expect(joined).toContain('(est)');
+    expect(joined).not.toMatch(/→|▲|▼/);
+  });
+
+  it('over hold-flat colors the gap red; honesty notes land in the tooltip', () => {
     const over = gapModel(TREND, [], 320);
-    expect(gapLine(over, 'Sun 25')).toBe(
-      'Hold-flat ≈ 307/wk (44/day) · planned 320 → 13 over',
-    );
+    const copy = gapCopy(over, 'Sun 25', { extraCount: 1, extraLoad: 30, missedCount: 1, missedLoad: 70 });
+    expect(copy.chips[2]!.value).toBe('-13');
+    expect(copy.chips[2]!.tone).toBe('worse');
+    const joined = copy.tooltip.join(' ');
+    expect(joined).toContain('30 load unplanned (1 extra run)');
+    expect(joined).toContain('1 missed (70 load)');
+  });
+});
+
+describe('zoneFlagChips (flagged chips, sentences inside tooltips)', () => {
+  const zones = {
+    lowPct: 15,
+    modPct: 27,
+    highPct: 59,
+    totalSecs: 3600,
+    lowFlag: 'red' as const,
+    modFlag: 'red' as const,
+    highFlag: 'red' as const,
+    moderateTrap: true,
+  };
+
+  it('labels + tones from the flags; full sentences in details', () => {
+    const chips = zoneFlagChips(zones, [], []);
+    expect(chips.map((c) => c.label)).toEqual(['LOW 15%', 'MOD 27%', 'HIGH 59%']);
+    expect(chips.map((c) => c.tone)).toEqual(['red', 'red', 'red']);
+    expect(chips[0]!.detail).toContain('moderate-trap warning');
+    expect(chips[1]!.detail).toContain('threshold-heavy');
+    expect(chips[2]!.detail).toContain('2-quality-sessions ceiling');
+  });
+
+  it('healthy week → neutral chips with the population-optimum definitions', () => {
+    const healthy = {
+      lowPct: 80,
+      modPct: 8,
+      highPct: 12,
+      totalSecs: 3600,
+      lowFlag: 'healthy' as const,
+      modFlag: 'healthy' as const,
+      highFlag: 'healthy' as const,
+      moderateTrap: false,
+    };
+    const chips = zoneFlagChips(healthy, [], []);
+    expect(chips.map((c) => c.tone)).toEqual(['neutral', 'neutral', 'neutral']);
+    expect(chips[0]!.detail).toContain('75-80%');
+  });
+
+  it('fence-rider callouts ride inside the LOW chip tooltip with the day label', () => {
+    const riders = [{ id: 'a2', name: 'Tuesday tempo', z3Pct: 34 }];
+    const acts = [act({ id: 'a2', name: 'Tuesday tempo', start_date_local: '2026-10-20T18:00:00' })];
+    const chips = zoneFlagChips(zones, riders, acts);
+    expect(chips[0]!.detail).toContain('"Tuesday tempo" sat in Z3 34%');
+    expect(chips[0]!.detail).toContain('Tue');
+  });
+});
+
+describe('recoveryTiles (mini-tiles with delta chips + flag tooltips)', () => {
+  const days: WellnessDay[] = [
+    ...Array.from({ length: 7 }, (_, i) => ({
+      id: `2026-10-${24 - i}`,
+      hrv: 60,
+      restingHR: 50,
+      sleepSecs: 25200,
+    })),
+    ...Array.from({ length: 7 }, (_, i) => ({
+      id: `2026-10-${17 - i}`,
+      hrv: 58,
+      restingHR: 52,
+      sleepSecs: 23400,
+    })),
+  ];
+
+  it('HRV/RHR/Sleep values with weekly delta chips', () => {
+    const tiles = recoveryTiles(recoveryTrend(days));
+    expect(tiles.map((t) => t.id)).toEqual(['hrv', 'rhr', 'sleep']);
+    expect(tiles[0]!.value).toBe('60.0');
+    expect(tiles[0]!.sub!.text).toBe('+2');
+    expect(tiles[0]!.sub!.tone).toBe('better');
+    expect(tiles[1]!.value).toBe('50');
+    expect(tiles[1]!.sub!.tone).toBe('better'); // RHR falling is good
+    expect(tiles[2]!.value).toBe('7h00m');
+    expect(tiles[2]!.sub!.text).toBe('+1h');
+  });
+
+  it('persistent moves surface as tooltips, never prose', () => {
+    const down = (vals: number[]): WellnessDay[] =>
+      vals.map((v, i) => ({ id: `d${i}`, hrv: v, restingHR: 50 }));
+    const tiles = recoveryTiles(recoveryTrend(down([58, 59, 60, 61, 62])));
+    expect(tiles[0]!.hint).toContain('HRV down 3 days running');
+    const calm = recoveryTiles(recoveryTrend(days));
+    expect(calm[0]!.hint).toContain('7-day average');
+  });
+
+  it('empty mirror → no tiles', () => {
+    expect(recoveryTiles(recoveryTrend([]))).toEqual([]);
   });
 });
 
@@ -132,47 +327,5 @@ describe('weekHonesty (spec §1.1 buckets)', () => {
       '2026-10-24',
     );
     expect(h).toEqual({ extraCount: 0, extraLoad: 0, missedCount: 0, missedLoad: 0 });
-  });
-});
-
-describe('recoveryTrend (spec §1.7: 7-day directions, persistent flags)', () => {
-  it('7-day averages + delta vs prior 7', () => {
-    const days: WellnessDay[] = [
-      ...Array.from({ length: 7 }, (_, i) => ({
-        id: `2026-10-${24 - i}`,
-        hrv: 60,
-        restingHR: 50,
-        sleepSecs: 25200, // 7h
-      })),
-      ...Array.from({ length: 7 }, (_, i) => ({
-        id: `2026-10-${17 - i}`,
-        hrv: 58,
-        restingHR: 52,
-        sleepSecs: 23400, // 6h30
-      })),
-    ];
-    const r = recoveryTrend(days);
-    expect(r.any).toBe(true);
-    expect(r.hrv.avg).toBe(60);
-    expect(r.hrv.delta).toBeCloseTo(2, 5);
-    expect(r.rhr.avg).toBe(50);
-    expect(r.rhr.delta).toBeCloseTo(-2, 5);
-    expect(r.sleep.avgSecs).toBe(25200);
-    expect(r.sleep.deltaSecs).toBeCloseTo(1800, 5);
-    expect(r.hrv.flag).toBe(false);
-  });
-
-  it('flags only persistent 3-day moves (HRV down, RHR up)', () => {
-    const down = (vals: number[]): WellnessDay[] =>
-      vals.map((v, i) => ({ id: `d${i}`, hrv: v, restingHR: 50 }));
-    expect(recoveryTrend(down([58, 59, 60, 61, 62])).hrv.flag).toBe(true); // 3 straight down
-    expect(recoveryTrend(down([60, 58, 60, 61, 62])).hrv.flag).toBe(false); // bounce
-    const up = (vals: number[]): WellnessDay[] =>
-      vals.map((v, i) => ({ id: `d${i}`, restingHR: v }));
-    expect(recoveryTrend(up([52, 51, 50, 50, 50])).rhr.flag).toBe(true);
-  });
-
-  it('empty mirror → nothing to show', () => {
-    expect(recoveryTrend([]).any).toBe(false);
   });
 });

@@ -1,9 +1,9 @@
 /**
- * Pure view-model builders for the calendar stats card (metrics spec
- * docs/research/athlete-dashboard-metrics.md §3: PRIMARY state + verdict
- * always visible, SECONDARY details behind a disclosure). All number
- * formatting + text assembly lives here so it is unit-testable; components
- * only render.
+ * Pure view-model builders for the calendar hero card (metrics spec
+ * docs/research/athlete-dashboard-metrics.md §3 + design spec
+ * docs/design/calendar-home-v2-spec.md: metric tiles + verdict + tooltip
+ * copy — no exposed prose, no bare text arrows). All number formatting +
+ * text assembly lives here so it is unit-testable; components only render.
  *
  * Spec §0 conventions: load integers · distance 1dp · CTL/ATL 1dp ·
  * form/drift/percentages integers · projections marked (est) · load is never
@@ -11,14 +11,22 @@
  */
 import {
   fitnessTrend,
+  formatDuration,
+  formatKm,
+  formBand,
+  FORM_BAND_WORD,
   loadToHoldFlat,
   project,
   weekKey,
+  ctlFlatWeeklyLoad,
   type EventEx,
   type Activity,
   type FitnessTrend,
+  type FenceRider,
   type WellnessDay,
+  type ZoneBalance,
 } from '@intervals/core';
+import { dayLabel } from '@/lib/dates';
 
 /** "-3" / "+1" / "0" — signed integer with explicit sign, never "-0". */
 export function signedInt(n: number): string {
@@ -32,10 +40,210 @@ export function fmt1dp(n: number): string {
   return n.toFixed(1);
 }
 
-/** Trend arrow glyph: ▲ up, ▼ down, → flat/unknown. */
-export function trendArrow(delta: number | null, flatBand = 0.05): string {
-  if (delta == null || Math.abs(delta) < flatBand) return '→';
-  return delta > 0 ? '▲' : '▼';
+/**
+ * Trend direction for a delta: drives the small directional ICON inside a
+ * sub-chip (never a bare unicode arrow). Flat within ±flatBand.
+ */
+export type TrendDir = 'up' | 'down' | 'flat';
+
+export function trendDir(delta: number | null | undefined, flatBand = 0.05): TrendDir {
+  if (delta == null || Math.abs(delta) < flatBand) return 'flat';
+  return delta > 0 ? 'up' : 'down';
+}
+
+// ---------------------------------------------------------------------------
+// Tile models (design spec §2): icon? + small-caps label + BIG value + sub
+// chip (colored text + optional directional icon). Tone = chip color:
+// better = success green · worse = danger red · neutral = muted.
+// ---------------------------------------------------------------------------
+
+export type TileTone = 'better' | 'worse' | 'neutral';
+
+export interface TileSub {
+  text: string;
+  tone: TileTone;
+  dir?: TrendDir;
+}
+
+export interface TileModel {
+  id: string;
+  label: string;
+  value: string;
+  /** Value ink tone; undefined = default text color. */
+  valueTone?: TileTone;
+  sub?: TileSub | null;
+  /** Tooltip content (definition / callout) rendered as an info hint. */
+  hint?: string | null;
+}
+
+/** The window-aggregated stats the hero tiles read (subset of WeeklyStats). */
+export interface SummaryStatsInput {
+  plannedDistanceM: number;
+  plannedTimeSec: number;
+  plannedLoad: number;
+  actualDistanceM: number;
+  actualTimeSec: number;
+  actualLoad: number;
+  longestRunM: number;
+  plannedDistanceEstimated?: boolean;
+  plannedTimeEstimated?: boolean;
+}
+
+const plannedPrefix = (estimated?: boolean) => (estimated ? 'planned ≈' : 'planned ');
+
+/** Distance / Time / Load tiles: BIG actual value, muted "planned" sub-chip. */
+export function summaryTiles(s: SummaryStatsInput): TileModel[] {
+  return [
+    {
+      id: 'distance',
+      label: 'Distance',
+      value: s.actualDistanceM > 0 ? formatKm(s.actualDistanceM) : '—',
+      sub:
+        s.plannedDistanceM > 0
+          ? {
+              text: `${plannedPrefix(s.plannedDistanceEstimated)}${formatKm(s.plannedDistanceM)}`,
+              tone: 'neutral',
+            }
+          : null,
+    },
+    {
+      id: 'time',
+      label: 'Time',
+      value: s.actualTimeSec > 0 ? formatDuration(s.actualTimeSec) : '—',
+      sub:
+        s.plannedTimeSec > 0
+          ? {
+              text: `${plannedPrefix(s.plannedTimeEstimated)}${formatDuration(s.plannedTimeSec)}`,
+              tone: 'neutral',
+            }
+          : null,
+    },
+    {
+      id: 'load',
+      label: 'Load',
+      value: s.actualLoad > 0 ? String(Math.round(s.actualLoad)) : '—',
+      sub:
+        s.plannedLoad > 0
+          ? { text: `planned ${Math.round(s.plannedLoad)}`, tone: 'neutral' }
+          : null,
+    },
+  ];
+}
+
+/**
+ * Per-tile tooltip copy (definitions live in tooltips, never exposed prose).
+ * Distance also carries the longest-run callout so the data survives the
+ * 4-tile strip.
+ */
+export function tileHints(s: SummaryStatsInput): Record<string, string | null> {
+  const distance: string[] = [];
+  if (s.plannedDistanceEstimated) {
+    distance.push('Planned distance is estimated from planned time at your recent pace.');
+  }
+  if (s.longestRunM > 0) distance.push(`Longest run this week: ${formatKm(s.longestRunM)}.`);
+  return {
+    distance: distance.length ? distance.join(' ') : null,
+    time: s.plannedTimeEstimated
+      ? 'Planned time is missing on the event, so pace is estimated from your recent runs.'
+      : null,
+    load: 'Load is intervals.icu training load (TRIMP): duration weighted by intensity.',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Form ring (design spec §2): position on the fresh/fatigued band. The ring
+// sweep is the form value clamped onto the Coggan band scale +30..-30.
+// ---------------------------------------------------------------------------
+
+export interface RingModel {
+  /** 0..1 sweep of the ring (0 = deeply fatigued end, 1 = very fresh end). */
+  fraction: number;
+  word: string;
+  tone: TileTone;
+}
+
+const RING_MIN = -30;
+const RING_MAX = 30;
+
+export function formRingModel(form: number): RingModel {
+  const raw = (form - RING_MIN) / (RING_MAX - RING_MIN);
+  const fraction = Math.min(1, Math.max(0, raw));
+  const band = formBand(form);
+  const tone: TileTone =
+    band === 'very-fresh' || band === 'fresh'
+      ? 'better'
+      : band === 'fatigued' || band === 'deeply-fatigued'
+        ? 'worse'
+        : 'neutral';
+  return { fraction, word: FORM_BAND_WORD[band], tone };
+}
+
+/** The FORM hero tile: ring + signed value + band-word chip. */
+export interface FormTileModel extends TileModel {
+  ring: RingModel;
+}
+
+export function formTileModel(
+  trend: FitnessTrend | null,
+  loading: boolean,
+): FormTileModel | null {
+  if (!trend) {
+    if (!loading) return null;
+    return { id: 'form', label: 'Form', value: '…', sub: null, ring: { fraction: 0.5, word: '…', tone: 'neutral' } };
+  }
+  const ring = formRingModel(trend.form);
+  const d = trend.formDelta7;
+  return {
+    id: 'form',
+    label: 'Form',
+    value: signedInt(trend.form),
+    valueTone: ring.tone,
+    sub:
+      d == null
+        ? { text: ring.word, tone: ring.tone }
+        : {
+            text: Math.abs(d) < 1 ? `${ring.word} · steady` : `${ring.word} · ${signedInt(d)}/wk`,
+            tone: Math.abs(d) < 1 ? 'neutral' : d > 0 ? 'better' : 'worse',
+            dir: trendDir(d, 1),
+          },
+    hint: 'Form = fitness (CTL) minus fatigue (ATL). Positive means fresh, negative means carrying fatigue.',
+    ring,
+  };
+}
+
+/** FITNESS drawer mini-tiles: CTL + ATL with weekly delta chips. */
+export function fitnessTiles(trend: FitnessTrend): TileModel[] {
+  const ctl: TileModel = {
+    id: 'ctl',
+    label: 'CTL · fitness',
+    value: fmt1dp(trend.ctl),
+    sub:
+      trend.ctlDelta7 != null
+        ? {
+            text: `${signedInt(trend.ctlDelta7)}/wk`,
+            tone: trend.ctlDelta7 > 0.05 ? 'better' : trend.ctlDelta7 < -0.05 ? 'worse' : 'neutral',
+            dir: trendDir(trend.ctlDelta7),
+          }
+        : null,
+    hint: trend.detraining
+      ? 'Fresher, but fitness falling — this is detraining, not a taper (est).'
+      : 'CTL: 42-day exponentially-weighted average load — your fitness base.',
+  };
+  const atl: TileModel = {
+    id: 'atl',
+    label: 'ATL · fatigue',
+    value: fmt1dp(trend.atl),
+    sub:
+      trend.atlDelta7 != null
+        ? {
+            text: `${signedInt(trend.atlDelta7)}/wk`,
+            tone: trend.atlDelta7 > 0.05 ? 'worse' : trend.atlDelta7 < -0.05 ? 'better' : 'neutral',
+            dir: trendDir(trend.atlDelta7),
+          }
+        : null,
+    hint: 'ATL: 7-day exponentially-weighted average load — your current fatigue.',
+  };
+  return [ctl, atl];
 }
 
 /** One-line headline verdict from the spec §3 templates (state · load). */
@@ -43,7 +251,7 @@ export function buildVerdict(trend: FitnessTrend | null, plannedWeekLoad: number
   if (!trend) return null;
   const state = trend.detraining && trend.ctlDelta7 != null
     ? `fresher, but fitness ${signedInt(trend.ctlDelta7)}/wk — detraining, not a taper (est)`
-    : `Form ${Math.round(trend.form)}, ${trendWord(trend.formDelta7)}`;
+    : `Form ${signedInt(trend.form)}, ${trendWord(trend.formDelta7)}`;
   const load =
     plannedWeekLoad > 0
       ? `hold-flat ≈ ${Math.round(loadToHoldFlat(trend.ctl, trend.atl))}/wk, you're at ${Math.round(plannedWeekLoad)}`
@@ -98,21 +306,121 @@ export function gapModel(
   };
 }
 
-/** One line for the details gap card, e.g. "Hold-flat ≈ 307/wk (44/day) · planned 266 → 41 under · CTL 41.9 → 41.4, form −2 → −1 by Sun (est)". */
-export function gapLine(g: GapModel, horizonLabel: string): string {
-  const parts: string[] = [`Hold-flat ≈ ${g.holdWeekly}/wk (${g.holdDaily}/day)`];
-  if (g.plannedWeekly > 0) {
-    const rel = g.gapWeekly >= 0 ? `${g.gapWeekly} under` : `${-g.gapWeekly} over`;
-    parts.push(`planned ${g.plannedWeekly} → ${rel}`);
-  } else {
-    parts.push('nothing planned this week');
-  }
+/** One row, three stat chips (design spec §4) + the definition as tooltip copy. */
+export interface GapChip {
+  id: string;
+  label: string;
+  value: string;
+  tone: TileTone;
+}
+
+export interface GapCopy {
+  chips: [GapChip, GapChip, GapChip];
+  /** InfoHint content: hold-flat definition + projection + adherence notes. */
+  tooltip: string[];
+}
+
+export function gapCopy(
+  g: GapModel,
+  horizonLabel: string,
+  honesty?: WeekHonesty | null,
+): GapCopy {
+  const chips: [GapChip, GapChip, GapChip] = [
+    { id: 'hold', label: 'Hold-flat', value: `${g.holdWeekly}/wk`, tone: 'neutral' },
+    { id: 'you', label: 'You', value: `${g.plannedWeekly}`, tone: 'neutral' },
+    {
+      id: 'gap',
+      label: 'Gap',
+      value: signedInt(g.gapWeekly),
+      // negative gap = over hold-flat = fatigue incoming (red); under is neutral (a recovery week is legal)
+      tone: g.gapWeekly < 0 ? 'worse' : 'neutral',
+    },
+  ];
+  const tooltip: string[] = [
+    `Hold-flat = the weekly load that keeps form exactly where it is. Fitness-flat would be ${Math.round(ctlFlatWeeklyLoad(g.ctl0))}/wk; hold-flat adjusts for the form you're carrying.`,
+  ];
+  if (g.plannedWeekly === 0) tooltip.push('Nothing is planned this week yet.');
   if (g.projected) {
-    parts.push(
-      `CTL ${fmt1dp(g.ctl0)} → ${fmt1dp(g.endCtl)}, form ${Math.round(g.form0)} → ${Math.round(g.endForm)} by ${horizonLabel} (est)`,
+    tooltip.push(
+      `By ${horizonLabel} at this pace: CTL ${fmt1dp(g.ctl0)} to ${fmt1dp(g.endCtl)}, form ${Math.round(g.form0)} to ${Math.round(g.endForm)} (est).`,
     );
   }
-  return parts.join(' · ');
+  if (honesty && (honesty.extraCount > 0 || honesty.missedCount > 0)) {
+    if (honesty.extraCount > 0) {
+      tooltip.push(
+        `${Math.round(honesty.extraLoad)} load unplanned (${honesty.extraCount} extra run${honesty.extraCount > 1 ? 's' : ''}).`,
+      );
+    }
+    if (honesty.missedCount > 0) {
+      tooltip.push(`${honesty.missedCount} missed (${Math.round(honesty.missedLoad)} load).`);
+    }
+  }
+  return { chips, tooltip };
+}
+
+/**
+ * Zone balance findings as compact flagged chips (design spec §4): one line,
+ * full sentences live inside the hover/press tooltips — including the
+ * moderate-trap and fence-rider callouts.
+ */
+export type ChipTone = 'neutral' | 'amber' | 'red';
+
+export interface FlagChipModel {
+  id: string;
+  label: string;
+  tone: ChipTone;
+  detail: string;
+}
+
+export function zoneFlagChips(
+  zones: ZoneBalance,
+  riders: FenceRider[],
+  activities: Activity[],
+): FlagChipModel[] {
+  const riderLines = riders
+    .slice(0, 2)
+    .map((r) => {
+      const act = activities.find((a) => a.id === r.id);
+      const day = act ? `${dayLabel(act.start_date_local.slice(0, 10))} ` : '';
+      return `${day}"${r.name ?? 'run'}" sat in Z3 ${r.z3Pct}% — this is where the trap lives.`;
+    })
+    .join(' ');
+  const low: FlagChipModel = {
+    id: 'low',
+    label: `LOW ${zones.lowPct}%`,
+    tone: zones.lowFlag === 'red' ? 'red' : zones.lowFlag === 'amber' ? 'amber' : 'neutral',
+    detail:
+      zones.lowFlag === 'red'
+        ? `LOW ${zones.lowPct}% — moderate-trap warning: the week is mostly middle intensity.`
+        : zones.lowFlag === 'amber'
+          ? `LOW ${zones.lowPct}% — easy runs are drifting.`
+          : 'Easy work (Z1-Z2) should be ~75-80% of a healthy week.',
+  };
+  if (riderLines) low.detail = `${low.detail} ${riderLines}`.trim();
+  const mod: FlagChipModel = {
+    id: 'mod',
+    label: `MOD ${zones.modPct}%`,
+    tone: zones.modFlag === 'red' ? 'red' : zones.modFlag === 'amber' ? 'amber' : 'neutral',
+    detail:
+      zones.modFlag === 'red'
+        ? `MOD ${zones.modPct}% — threshold-heavy weeks add fatigue without fitness.`
+        : zones.modFlag === 'amber'
+          ? `MOD ${zones.modPct}% — drifting up.`
+          : 'Moderate (Z3/SS) should stay at or under 10% of the week.',
+  };
+  if (zones.moderateTrap) {
+    mod.detail = `${mod.detail} Mostly-middle weeks are the classic moderate trap.`;
+  }
+  const high: FlagChipModel = {
+    id: 'high',
+    label: `HIGH ${zones.highPct}%`,
+    tone: zones.highFlag === 'red' ? 'red' : 'neutral',
+    detail:
+      zones.highFlag === 'red'
+        ? `HIGH ${zones.highPct}% — above the 2-quality-sessions ceiling.`
+        : 'Hard work (Z4+) should stay at or under 25% of the week.',
+  };
+  return [low, mod, high];
 }
 
 /**
@@ -221,6 +529,77 @@ export function recoveryTrend(days: WellnessDay[]): RecoveryTrend {
     deltaSecs: sleepAvg != null && sleepPrev != null ? sleepAvg - sleepPrev : null,
   };
   return { hrv, rhr, sleep, any: hrv.avg != null || rhr.avg != null || sleep.avgSecs != null };
+}
+
+/** RECOVERY drawer mini-tiles: 7-day averages with weekly delta chips. */
+export function recoveryTiles(recovery: RecoveryTrend): TileModel[] {
+  const tiles: TileModel[] = [];
+  if (recovery.hrv.avg != null) {
+    const d = recovery.hrv.delta;
+    tiles.push({
+      id: 'hrv',
+      label: 'HRV',
+      value: recovery.hrv.avg.toFixed(1),
+      sub:
+        d != null && Math.abs(d) >= 0.5
+          ? {
+              text: signedInt(d),
+              tone: d > 0 ? 'better' : 'worse',
+              dir: trendDir(d, 0.05),
+            }
+          : null,
+      hint: recovery.hrv.flag
+        ? 'HRV down 3 days running — worth easing off.'
+        : '7-day average heart-rate variability vs the prior 7 days. Rising is good.',
+    });
+  }
+  if (recovery.rhr.avg != null) {
+    const d = recovery.rhr.delta;
+    tiles.push({
+      id: 'rhr',
+      label: 'RHR',
+      value: String(Math.round(recovery.rhr.avg)),
+      sub:
+        d != null && Math.abs(d) >= 0.5
+          ? {
+              text: signedInt(d),
+              tone: d < 0 ? 'better' : 'worse',
+              dir: trendDir(d, 0.05),
+            }
+          : null,
+      hint: recovery.rhr.flag
+        ? 'Resting HR up 3 days running.'
+        : '7-day average resting heart rate vs the prior 7 days. Falling is good.',
+    });
+  }
+  if (recovery.sleep.avgSecs != null) {
+    const d = recovery.sleep.deltaSecs;
+    tiles.push({
+      id: 'sleep',
+      label: 'Sleep',
+      value: fmtHours(recovery.sleep.avgSecs),
+      sub:
+        d != null && Math.abs(d) >= 1800
+          ? {
+              text: `${signedInt(d / 3600)}h`,
+              tone: d > 0 ? 'better' : 'worse',
+              dir: trendDir(d, 1),
+            }
+          : null,
+      hint: '7-day average sleep duration vs the prior 7 days.',
+    });
+  }
+  return tiles;
+}
+
+/** True when at least one drawer section has content. */
+export function hasDetails(
+  zones: ZoneBalance | null,
+  gap: GapModel | null,
+  recovery: RecoveryTrend,
+  trend: FitnessTrend | null,
+): boolean {
+  return (zones != null && zones.totalSecs > 0) || gap != null || recovery.any || trend != null;
 }
 
 /** Re-export so the card can share one import site. */

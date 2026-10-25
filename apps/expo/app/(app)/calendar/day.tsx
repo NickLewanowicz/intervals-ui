@@ -119,7 +119,7 @@ function ActualBlock({ activity }: { activity: Activity }) {
       <Text style={s.actualMeta}>{activityLine(activity)}</Text>
       {total > 0 ? (
         <>
-          {/* FIX-4: proportional stacked bar, cool→hot by zone */}
+          {/* FIX-4: proportional stacked bar, cool-to-hot by zone */}
           <View style={s.zoneBar}>
             {zones.map(([id, secs]) => (
               <View

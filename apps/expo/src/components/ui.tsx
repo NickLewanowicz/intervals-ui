@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { PressableScale } from '@/components/motion';
 import { GlassCard } from '@/components/glass';
+import { InfoHint } from '@/components/Hint';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 
@@ -254,6 +255,84 @@ export function Empty({ message, icon }: { message: string; icon?: IconName }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// StatTile (design spec calendar-home-v2 §2): icon? + small-caps muted label
+// + BIG tabular value + sub-chip (colored text + small directional Ionicon —
+// never a bare unicode arrow). `lg` = hero strip, `sm` = drawer mini-tiles.
+// Pure shape comes from @/lib/stats-view TileModel.
+// ---------------------------------------------------------------------------
+
+export type TileTone = 'better' | 'worse' | 'neutral';
+
+export interface StatTileSub {
+  text: string;
+  tone: TileTone;
+  /** Directional icon: up / down / remove (flat). No icon when omitted. */
+  dir?: 'up' | 'down' | 'flat';
+}
+
+const SUB_ICON: Record<NonNullable<StatTileSub['dir']>, IconName> = {
+  up: 'arrow-up',
+  down: 'arrow-down',
+  flat: 'remove',
+};
+
+export function StatTile({
+  icon,
+  label,
+  value,
+  valueTone,
+  sub,
+  hint,
+  size = 'lg',
+  style,
+  testID,
+}: {
+  icon?: IconName;
+  label: string;
+  value: string;
+  /** Value ink tone (e.g. form band); default = text color. */
+  valueTone?: TileTone;
+  sub?: StatTileSub | null;
+  /** Tooltip content rendered as an info-i hint beside the label. */
+  hint?: string | React.ReactNode;
+  size?: 'lg' | 'sm';
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+}) {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const toneColor = sub?.tone === 'better' ? colors.success : sub?.tone === 'worse' ? colors.danger : colors.muted;
+  const valueColor =
+    valueTone === 'better' ? colors.success : valueTone === 'worse' ? colors.danger : colors.text;
+  return (
+    <View style={[s.tile, size === 'sm' && s.tileSm, style]} testID={testID}>
+      <View style={s.tileLabelRow}>
+        {icon ? <Icon name={icon} size={size === 'sm' ? 12 : 13} color={colors.muted} /> : null}
+        <Text style={size === 'sm' ? s.tileLabelSm : s.tileLabel}>{label}</Text>
+        {hint ? <InfoHint content={hint} label={`About ${label}`} size={size === 'sm' ? 13 : 14} /> : null}
+      </View>
+      <Text style={[size === 'sm' ? s.tileValueSm : s.tileValue, { color: valueColor }]} numberOfLines={1}>
+        {value}
+      </Text>
+      {sub ? (
+        <View style={s.tileSubRow}>
+          {sub.dir ? (
+            <Ionicons
+              name={SUB_ICON[sub.dir]}
+              size={size === 'sm' ? 10 : 11}
+              color={toneColor}
+            />
+          ) : null}
+          <Text style={[size === 'sm' ? s.tileSubSm : s.tileSub, { color: toneColor }]} numberOfLines={1}>
+            {sub.text}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = (p: Palette) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: p.bg },
@@ -342,4 +421,47 @@ const styles = (p: Palette) =>
     },
     stateText: { color: p.muted, fontSize: fontSize.body, textAlign: 'center' },
     errorText: { color: p.danger, fontSize: fontSize.body, textAlign: 'center' },
+    // --- StatTile (design spec §2) ---
+    tile: { gap: 2, flexShrink: 1, minWidth: 0 },
+    tileSm: { gap: 1 },
+    tileLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    tileLabel: {
+      color: p.muted,
+      fontSize: fontSize.tiny,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      flexShrink: 1,
+    },
+    tileLabelSm: {
+      color: p.muted,
+      fontSize: fontSize.tiny - 1,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      flexShrink: 1,
+    },
+    tileValue: {
+      color: p.text,
+      fontSize: 22,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+    },
+    tileValueSm: {
+      color: p.text,
+      fontSize: fontSize.small + 2,
+      fontWeight: '700',
+      fontVariant: ['tabular-nums'],
+    },
+    tileSubRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    tileSub: {
+      fontSize: fontSize.tiny + 1,
+      fontWeight: '600',
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+    },
+    tileSubSm: {
+      fontSize: fontSize.tiny,
+      fontWeight: '600',
+      fontVariant: ['tabular-nums'],
+      flexShrink: 1,
+    },
   });
