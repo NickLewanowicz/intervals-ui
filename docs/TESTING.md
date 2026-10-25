@@ -34,3 +34,9 @@ against the deployed app (vision-capable sessions only).
   assertion in `prompts.test.ts` that the behaviour is TAUGHT (string-level).
 - New endpoint → extend the worker digest tests for context building; happy
   path of routing is smoke-tested post-deploy.
+
+## Native (Android) parity QA
+
+- Build: `cd apps/expo && npx expo prebuild --platform android --no-install && cd android && JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home ANDROID_HOME=~/Library/Android/sdk ./gradlew assembleRelease` → `app/build/outputs/apk/release/app-release.apk` (signed with the machine's debug keystore — keep using the same machine for update installs).
+- Install: `adb install -r <apk>` on a running emulator/device.
+- Parity captures: `tools/parity_shots.sh all` (emu via uiautomator + web via playwright) → `qa-screenshots/parity/{emu,web}/`, then the qa-parity persona compares (docs/qa/parity-round-N.md). Parity sign-off round 1: docs/qa/parity-round-1.md.

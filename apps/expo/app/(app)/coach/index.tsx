@@ -58,6 +58,9 @@ const COACH_AVATAR = require('@/assets/coach-avatar.png');
 
 const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
+/** Min gap between streaming auto-scrolls — batch deltas, no per-token storm. */
+const FOLLOW_MS = 120;
+
 /** Static suggested replies (vercel suggested-actions pattern — zero tokens). */
 const SUGGESTIONS = [
   'What should I adjust this week?',
@@ -274,6 +277,8 @@ export default function CoachScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const followLastAt = useRef(0);
+  const followTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const history = useChatMessages(demo ? null : sessionId);
   const sessionProposals = useSessionProposals(demo ? null : sessionId);
@@ -310,6 +315,28 @@ export default function CoachScreen() {
     scrollRef.current?.scrollToEnd?.({ animated: false });
   }, [messages]);
 
+  // BUG-2 (parity-1): the [messages] effect fires per array change, but the
+  // assistant bubble keeps growing during streaming and RN lays the grown
+  // content out AFTER the effect runs — the final scroll landed ~2 lines
+  // short until a manual swipe. Follow both geometry events AFTER layout:
+  // onContentSizeChange (streamed growth) and onLayout (the chips row that
+  // appears when the stream ends shrinks this ScrollView's viewport WITHOUT
+  // changing content size — the second half of the same bug). The
+  // trailing-edge throttle keeps it cheap (≤1 scroll per FOLLOW_MS, and the
+  // final change always lands).
+  const scrollTail = useCallback(() => {
+    scrollRef.current?.scrollToEnd?.({ animated: false });
+    followLastAt.current = Date.now();
+  }, []);
+  const followTail = useCallback(() => {
+    if (followTimer.current) return;
+    const wait = Math.max(0, FOLLOW_MS - (Date.now() - followLastAt.current));
+    followTimer.current = setTimeout(() => {
+      followTimer.current = null;
+      scrollTail();
+    }, wait);
+  }, [scrollTail]);
+
   // initial transport guess from the local key; every send re-decides
   useEffect(() => {
     let cancelled = false;
@@ -325,6 +352,7 @@ export default function CoachScreen() {
     return () => {
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
       if (hoverTimer.current) clearTimeout(hoverTimer.current);
+      if (followTimer.current) clearTimeout(followTimer.current);
     };
   }, []);
 
@@ -570,8 +598,10 @@ export default function CoachScreen() {
 
   return (
     <KeyboardAvoidingView style={s.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {/* glass header: coach avatar + model chip (name only — no 375px truncation) */}
-      <GlassBar edge="bottom" style={s.headerBar}>
+      {/* glass header: coach avatar + model chip (name only — no 375px truncation).
+          BUG-1 (parity-1): the bar ran under the status bar — pad the top inset
+          inline (calendar/index.tsx pattern; web insets are 0 → unchanged). */}
+      <GlassBar edge="bottom" style={[s.headerBar, { paddingTop: insets.top + spacing.sm + 2 }]}>
         <View style={s.headerInner}>
           <Image source={COACH_AVATAR} style={s.avatar} accessibilityIgnoresInvertColors />
           <View style={s.headerTitle}>
@@ -607,7 +637,13 @@ export default function CoachScreen() {
         </PressableScale>
       ) : null}
 
-      <ScrollView ref={scrollRef} style={s.list} contentContainerStyle={s.listContent}>
+      <ScrollView
+        ref={scrollRef}
+        style={s.list}
+        contentContainerStyle={s.listContent}
+        onContentSizeChange={followTail}
+        onLayout={followTail}
+      >
         {messages.length === 0 ? (
           <View style={s.empty}>
             <Image source={COACH_AVATAR} style={s.emptyAvatar} accessibilityIgnoresInvertColors />
@@ -810,7 +846,8 @@ const mdStyles = (p: Palette) =>
 const styles = (p: Palette) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: p.bg },
-    headerBar: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2 },
+    // vertical rhythm lives in paddingBottom + the inline insets.top paddingTop
+    headerBar: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm + 2 },
     headerInner: {
       maxWidth: layout.maxW,
       width: '100%',
