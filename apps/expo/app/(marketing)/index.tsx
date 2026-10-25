@@ -1,8 +1,20 @@
 /**
- * WEB-ONLY marketing splash (V-01): Hero → 80/20 anchor → training science →
- * how it works → disclaimer. Native builds never land here — the redirect
- * below sends them straight to /sign-in, while the static web export keeps
- * this route for the deployed site.
+ * WEB-ONLY marketing splash (V-01): Hero → "See it" screens showcase → 80/20
+ * anchor → training science → how it works → disclaimer. Native builds never
+ * land here — the redirect below sends them straight to /sign-in, while the
+ * static web export keeps this route for the deployed site.
+ *
+ * SCREENS SHOWCASE (round 12): the hero makes a claim ("Your training,
+ * coached"); the very next section proves it with real product screenshots
+ * (apps/expo/src/assets/marketing — captured from the running app) imposed on
+ * pure-CSS device frames (theme.device chrome): a MacBook center stage with
+ * the week calendar, two phones overlapping its lower corners (coach chat on
+ * an island-style phone, proposal approval on a punch-hole-style phone), and
+ * a small browser-chromed intervals.icu shot as a supporting card at the end
+ * of the science section. Screenshots render `cover` inside fixed-aspect,
+ * overflow-hidden screen areas — nothing stretches, nothing shifts (fixed
+ * widths + aspect ratios only). Order rationale: show the product before
+ * arguing the method (see it → 80/20 → science → mechanics).
  *
  * HERO BACKGROUND STACK (round-6 repair) — strict paint order, no gaps:
  *   1. base color  — palette `bg` on the hero container itself;
@@ -29,15 +41,53 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ImageBackground, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  ImageBackground,
+  ImageSourcePropType,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  type StyleProp,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 import { GlassCard } from '@/components/glass';
 import { PressableScale } from '@/components/motion';
 import { Button } from '@/components/ui';
-import { fontSize, intensity, layout, lineHeight, radius, spacing, type Palette } from '@/theme';
+import {
+  device,
+  fontSize,
+  intensity,
+  layout,
+  lineHeight,
+  radius,
+  shadows,
+  spacing,
+  type Palette,
+} from '@/theme';
 import { useTheme } from '@/theme-context';
 
 const BG_DARK = require('@/assets/bg-dark.jpg');
 const BG_LIGHT = require('@/assets/bg-light.jpg');
+
+/** Real product screenshots (round 12) — captured from the running app. */
+const SHOTS = {
+  desktop: require('@/assets/marketing/app-calendar-desktop.png'),
+  coach: require('@/assets/marketing/app-coach-mobile.png'),
+  proposal: require('@/assets/marketing/app-proposal-mobile.png'),
+  icu: require('@/assets/marketing/intervals-icu.jpg'),
+} as const;
+
+/** Wide breakpoint: the showcase switches from stacked to overlapped stage. */
+const SHOWCASE_WIDE = 900;
+/** Flanking phone frame width on the wide stage. */
+const PHONE_W = 190;
+/** How far the phones climb onto the MacBook's lower corners. */
+const PHONE_OVERLAP = 88;
 
 const STEPS: Array<{ icon: React.ComponentProps<typeof Ionicons>['name']; title: string; body: string }> = [
   {
@@ -80,6 +130,16 @@ export default function MarketingPage() {
   const { colors, isDark } = useTheme();
   const s = styles(colors);
   const { easy, fast } = intensity(colors);
+  const { width } = useWindowDimensions();
+  // Prerender-safe responsive switch: the static export can't know the
+  // viewport (Dimensions reads 0 without DOM), so the prerendered HTML always
+  // paints the stacked layout; after mount a wide viewport upgrades to the
+  // overlapped stage. The section sits below the fold, so the upgrade is
+  // invisible — and the first client render matches the prerender (no
+  // hydration mismatch).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const wide = mounted && width >= SHOWCASE_WIDE;
 
   // Hydration self-heal: the static prerender cannot know the OS scheme, so a
   // dark-OS client hydrates a LIGHT-painted DOM. React adopts prerendered
@@ -151,6 +211,100 @@ export default function MarketingPage() {
         </View>
       </View>
 
+      {/* ── See it — real screens on CSS device frames (round 12) ────────────
+          Wide: MacBook center stage, two phones overlapping its lower
+          corners (paint above via zIndex), the MacBook caption sitting in
+          the gap between the phones so every device is captioned underneath.
+          Narrow: everything stacks vertically, no overlap. */}
+      <View style={s.showcase}>
+        <Text style={s.overline}>See it</Text>
+        <Text style={s.sectionTitle}>Straight from the app.</Text>
+        <Text style={s.sectionLead}>
+          The calendar, the coach and the approval step — exactly as they ship.
+        </Text>
+        {wide ? (
+          <View style={s.stageWide}>
+            <View style={[s.macSlot, shadows(colors).bar]}>
+              <MacBookFrame source={SHOTS.desktop} />
+            </View>
+            <View style={s.phonesRow}>
+              <View style={s.phoneCol}>
+                <PhoneFrame
+                  source={SHOTS.coach}
+                  variant="island"
+                  width={PHONE_W}
+                  style={shadows(colors).bar}
+                />
+                <Caption
+                  label="A coach that knows your data"
+                  line="Grounded in your actuals, HRV and plan — never generic tips."
+                  labelStyle={s.captionLabel}
+                  lineStyle={s.captionLine}
+                />
+              </View>
+              <View style={s.macCaptionCol}>
+                <Caption
+                  label="Your week, honestly"
+                  line="Planned against done, with load, zones and form in one place."
+                  labelStyle={s.captionLabel}
+                  lineStyle={s.captionLine}
+                />
+              </View>
+              <View style={s.phoneCol}>
+                <PhoneFrame
+                  source={SHOTS.proposal}
+                  variant="hole"
+                  width={PHONE_W}
+                  style={shadows(colors).bar}
+                />
+                <Caption
+                  label="Nothing changes without you"
+                  line="Every write arrives as a proposal — approve or dismiss, nothing else."
+                  labelStyle={s.captionLabel}
+                  lineStyle={s.captionLine}
+                />
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={s.stageNarrow}>
+            <View style={[s.macSlot, shadows(colors).bar]}>
+              <MacBookFrame source={SHOTS.desktop} />
+            </View>
+            <Caption
+              label="Your week, honestly"
+              line="Planned against done, with load, zones and form in one place."
+              labelStyle={s.captionLabel}
+              lineStyle={s.captionLine}
+            />
+            <PhoneFrame
+              source={SHOTS.coach}
+              variant="island"
+              width={230}
+              style={shadows(colors).bar}
+            />
+            <Caption
+              label="A coach that knows your data"
+              line="Grounded in your actuals, HRV and plan — never generic tips."
+              labelStyle={s.captionLabel}
+              lineStyle={s.captionLine}
+            />
+            <PhoneFrame
+              source={SHOTS.proposal}
+              variant="hole"
+              width={230}
+              style={shadows(colors).bar}
+            />
+            <Caption
+              label="Nothing changes without you"
+              line="Every write arrives as a proposal — approve or dismiss, nothing else."
+              labelStyle={s.captionLabel}
+              lineStyle={s.captionLine}
+            />
+          </View>
+        )}
+      </View>
+
       {/* ── 80/20 anchor — the product idea, given the most weight (FIX-5) ── */}
       <View style={s.eightyTwenty}>
         <Text style={s.overline}>The method</Text>
@@ -192,6 +346,23 @@ export default function MarketingPage() {
             </Text>
           </GlassCard>
         ))}
+        {/* Supporting card: where the data comes from. Deliberately smaller
+            and quieter than the showcase above — the product stays the star. */}
+        <GlassCard style={wide ? s.icuCardWide : s.icuCardNarrow}>
+          <BrowserFrame
+            source={SHOTS.icu}
+            style={wide ? s.icuFrameWide : s.icuFrameNarrow}
+          />
+          <View style={wide ? s.icuCopyWide : s.icuCopyNarrow}>
+            <Caption
+              label="Your intervals.icu, connected"
+              line="The coach reads your intervals.icu fitness, fatigue, zones and calendar — nothing to migrate."
+              labelStyle={s.captionLabel}
+              lineStyle={wide ? s.icuLine : s.icuLineCenter}
+              align={wide ? 'flex-start' : 'center'}
+            />
+          </View>
+        </GlassCard>
         <Text style={s.sectionFoot}>
           Everything above is applied to your intervals.icu data — your zones, your fitness, your
           races — and every plan is yours to approve.
@@ -233,6 +404,135 @@ export default function MarketingPage() {
         your own due diligence.
       </Text>
     </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Device frames (round-12 showcase) — pure Views, chrome colors from
+// theme.device (static: devices aren't themed surfaces). Screenshots render
+// `cover` inside fixed-aspect, overflow-hidden screen areas so nothing
+// stretches and nothing shifts. Shadows are passed in by the caller via the
+// `style` prop (they need the live palette).
+// ---------------------------------------------------------------------------
+
+/** Small-caps label + one supporting line, centered under a device. */
+function Caption({
+  label,
+  line,
+  labelStyle,
+  lineStyle,
+  align = 'center',
+}: {
+  label: string;
+  line: string;
+  labelStyle: TextStyle;
+  lineStyle: TextStyle;
+  align?: 'flex-start' | 'center';
+}) {
+  return (
+    <View style={[frameStyles.caption, { alignItems: align }]}>
+      <Text style={labelStyle}>{label}</Text>
+      <Text style={lineStyle}>{line}</Text>
+    </View>
+  );
+}
+
+/** MacBook: 16:10 screen in a dark bezel (rounded lid corners) over a wider
+ *  bottom deck with a centered notch lip. */
+function MacBookFrame({ source, style }: { source: ImageSourcePropType; style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[frameStyles.macWrap, style]}>
+      <View
+        style={[
+          frameStyles.macScreen,
+          // bezelEdge rim (not bezel): the lid needs to separate from a dark
+          // page background in the dark scheme; reads as a lit metal edge.
+          { backgroundColor: device.screen, borderColor: device.bezelEdge },
+        ]}
+      >
+        <Image
+          source={source}
+          style={frameStyles.screenImg}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+      </View>
+      <View
+        style={[frameStyles.macDeck, { backgroundColor: device.deck, borderTopColor: device.bezelEdge, borderBottomColor: device.deckEdge }]}
+      >
+        <View style={[frameStyles.macLip, { backgroundColor: device.notch }]} />
+      </View>
+    </View>
+  );
+}
+
+/** Phone: rounded slab, thin bezel, screen clipped to a tighter radius.
+ *  `island` renders a Dynamic-Island-style pill; `hole` a centered
+ *  punch-hole dot. Both sit over the screenshot like real device cutouts. */
+function PhoneFrame({
+  source,
+  variant,
+  width,
+  style,
+}: {
+  source: ImageSourcePropType;
+  variant: 'island' | 'hole';
+  width: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[
+        frameStyles.phoneBody,
+        { width, backgroundColor: device.screen, borderColor: device.bezelEdge },
+        style,
+      ]}
+    >
+      <View style={frameStyles.phoneClip}>
+        {/* Explicit width/height (not absoluteFill): RNW's object-fit cover
+            needs real dimensions — with absoluteFill the img renders at
+            natural size and cover never kicks in (MacBookFrame, which uses
+            width/height 100%, scales correctly). */}
+        <Image
+          source={source}
+          style={frameStyles.screenImg}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+        {variant === 'island' ? (
+          <View style={[frameStyles.phoneIsland, { backgroundColor: device.notch, borderColor: device.bezelEdge }]} />
+        ) : (
+          <View style={[frameStyles.phoneHole, { backgroundColor: device.notch, borderColor: device.bezelEdge }]} />
+        )}
+      </View>
+    </View>
+  );
+}
+
+/** Browser chrome (traffic dots + URL pill) over a fixed 16:10 screenshot —
+ *  used for the muted intervals.icu support card. Chrome is fixed-light to
+ *  match the light screenshot, hairline follows the live palette. */
+function BrowserFrame({ source, style }: { source: ImageSourcePropType; style?: StyleProp<ViewStyle> }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[frameStyles.browserWrap, { borderColor: colors.border }, style]}>
+      <View style={[frameStyles.browserBar, { backgroundColor: device.browserBar }]}>
+        {device.browserDots.map((dot) => (
+          <View key={dot} style={[frameStyles.browserDot, { backgroundColor: dot }]} />
+        ))}
+        <View style={[frameStyles.browserUrl, { backgroundColor: device.browserUrl }]}>
+          <Text style={[frameStyles.browserUrlText, { color: device.browserUrlText }]}>intervals.icu</Text>
+        </View>
+      </View>
+      <View style={[frameStyles.browserScreen, { backgroundColor: device.screen }]}>
+        <Image
+          source={source}
+          style={frameStyles.screenImg}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+      </View>
+    </View>
   );
 }
 
@@ -414,4 +714,128 @@ const styles = (p: Palette) =>
       lineHeight: 16,
       paddingHorizontal: spacing.xl,
     },
+    // ── See it showcase (round 12) ────────────────────────────────────────
+    // Wider than the text sections: the MacBook is the page's set piece.
+    showcase: { width: '100%', maxWidth: 880, alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.xl },
+    // Slot that owns the MacBook's width + stacking position under the phones.
+    macSlot: { alignSelf: 'center', width: '100%', maxWidth: 700, position: 'relative', zIndex: 0 },
+    stageWide: { alignSelf: 'stretch', marginTop: spacing.lg },
+    // Negative margin climbs the phones onto the MacBook's lower corners; the
+    // row paints above (zIndex 1) and bottom-aligns the three captions.
+    phonesRow: {
+      alignSelf: 'stretch',
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      gap: spacing.lg,
+      marginTop: -PHONE_OVERLAP,
+      position: 'relative',
+      zIndex: 1,
+    },
+    phoneCol: { width: PHONE_W, alignItems: 'center', gap: spacing.sm },
+    macCaptionCol: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: spacing.sm, paddingBottom: 2 },
+    stageNarrow: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg },
+    captionLabel: {
+      color: p.text,
+      fontSize: fontSize.tiny,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      textAlign: 'center',
+    },
+    captionLine: { color: p.muted, fontSize: fontSize.small, lineHeight: 18, textAlign: 'center' },
+    // ICU support card — row beside the copy when wide, stacked when narrow.
+    icuCardWide: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+    icuCardNarrow: { width: '100%', alignItems: 'center', gap: spacing.md },
+    icuFrameWide: { width: 300, flexShrink: 0 },
+    icuFrameNarrow: { width: '100%', maxWidth: 320 },
+    icuCopyWide: { flex: 1 },
+    icuCopyNarrow: { width: '100%', alignItems: 'center' },
+    icuLine: { color: p.muted, fontSize: fontSize.small, lineHeight: 19, textAlign: 'left' },
+    icuLineCenter: { color: p.muted, fontSize: fontSize.small, lineHeight: 19, textAlign: 'center' },
   });
+
+/**
+ * Device-frame chrome — static (theme.device colors, no palette), so this
+ * sheet is module-level. Palette-carrying styles (shadows, hairlines) are
+ * passed in by the callers above.
+ */
+const frameStyles = StyleSheet.create({
+  caption: { gap: 2 },
+  // MacBook: screen area is 16:10 like the 1440×900 capture, so `cover` fits
+  // 1:1 modulo the bezel inset (a hair of crop, absorbed by the frame). The
+  // deck runs wider than the lid and carries the centered notch lip.
+  macWrap: { width: '100%', alignItems: 'center' },
+  macScreen: {
+    width: '100%',
+    aspectRatio: 16 / 10,
+    borderWidth: 10,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+    overflow: 'hidden',
+  },
+  screenImg: { width: '100%', height: '100%' },
+  macDeck: {
+    width: '112%',
+    height: 15,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    alignItems: 'center',
+  },
+  macLip: {
+    position: 'absolute',
+    top: 0,
+    width: '13%',
+    height: 6,
+    borderBottomLeftRadius: 7,
+    borderBottomRightRadius: 7,
+  },
+  // Phone: body ratio matches the 393×852 captures; border-box sizing keeps
+  // the screen within a px or two of the source ratio — `cover` absorbs the
+  // rest. The tighter clip radius fakes the screen inset inside the bezel
+  // (outer 30 − border 8 = concentric 22).
+  phoneBody: { aspectRatio: 393 / 852, borderWidth: 8, borderRadius: 30, overflow: 'hidden' },
+  phoneClip: { flex: 1, borderRadius: 22, overflow: 'hidden' },
+  phoneIsland: {
+    position: 'absolute',
+    top: 6,
+    alignSelf: 'center',
+    width: '24%',
+    height: 13,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  phoneHole: {
+    position: 'absolute',
+    top: 8,
+    alignSelf: 'center',
+    width: 9,
+    height: 9,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  // Browser chrome: fixed-light to sit on the light intervals.icu shot; the
+  // wrap clips the bar + screenshot to one rounded card.
+  browserWrap: { borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  browserBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 7,
+  },
+  browserDot: { width: 8, height: 8, borderRadius: radius.pill },
+  browserUrl: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    borderRadius: radius.sm,
+    paddingVertical: 3,
+    paddingHorizontal: spacing.sm + 2,
+  },
+  browserUrlText: { fontSize: fontSize.tiny, fontWeight: '600' },
+  browserScreen: { aspectRatio: 1440 / 900 },
+});

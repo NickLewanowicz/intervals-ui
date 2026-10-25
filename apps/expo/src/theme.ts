@@ -215,6 +215,36 @@ export const shadows = (p: Palette) => ({
   },
 } as const);
 
+/**
+ * Device-frame chrome for the marketing "See it" showcase (web-only splash).
+ * Devices are physical objects, not themed surfaces — the same anodized
+ * finish reads correctly in both schemes, so these are static (not per-
+ * palette) tokens. `browser*` chrome is light on purpose: it frames the light
+ * intervals.icu screenshot.
+ */
+export const device = {
+  /** Dark glass bezel (MacBook lid rim, phone rim). */
+  bezel: '#10131b',
+  /** Hairline highlight on the bezel edge / hinge / island ring. */
+  bezelEdge: '#2b3245',
+  /** MacBook bottom deck. */
+  deck: '#161b26',
+  /** Deck's lower shadow line. */
+  deckEdge: '#070a10',
+  /** Letterbox behind screenshots inside a frame. */
+  screen: '#05070c',
+  /** Cutouts: Dynamic-Island pill, punch-hole, deck notch lip. */
+  notch: '#03050a',
+  /** macOS-style traffic lights (decorative, fixed hues). */
+  browserDots: ['#ff5f57', '#febc2e', '#28c840'] as [string, string, string],
+  /** Light browser chrome bar around the intervals.icu shot. */
+  browserBar: '#e8ecf4',
+  /** URL pill inside the chrome bar. */
+  browserUrl: '#ffffff',
+  /** URL text (light.muted — fixed, the chrome is fixed-light). */
+  browserUrlText: '#5f6c92',
+} as const;
+
 // ---------------------------------------------------------------------------
 // Semantic helpers
 // ---------------------------------------------------------------------------
