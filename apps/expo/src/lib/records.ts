@@ -138,6 +138,8 @@ export interface AppUser {
   preferredModel: string;
   units: 'km' | 'mi';
   athleteProfile: string;
+  /** PB record `updated` timestamp — when ANY of this record's fields last changed. */
+  updated: string | null;
 }
 
 type PbUserRecord = Record<string, unknown>;
@@ -151,6 +153,7 @@ export function toAppUser(record: PbUserRecord): AppUser {
     preferredModel: str(record.preferred_model) ?? '',
     units: record.units === 'mi' ? 'mi' : 'km',
     athleteProfile: str(record.athlete_profile) ?? '',
+    updated: str(record.updated) ?? null,
   };
 }
 

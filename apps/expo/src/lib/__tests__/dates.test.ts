@@ -3,16 +3,19 @@ import { weekKey } from '@intervals/core';
 import {
   addDays,
   addMonths,
+  clampToMonth,
   dayLabel,
   daysInMonth,
   isValidISO,
   monthAnchor,
   monthGrid,
+  monthLabelShort,
   startOfWeek,
   timeLabel,
   todayISO,
   weekDates,
   weekRangeLabel,
+  weekRangeLabelShort,
   weekWindow,
 } from '../dates';
 
@@ -97,5 +100,21 @@ describe('date math', () => {
     expect(timeLabel('2026-10-20T17:45:00')).toBe('17:45');
     expect(timeLabel('2026-10-20')).toBe('');
     expect(weekRangeLabel('2026-10-19')).toBe('Oct 19 – Oct 25');
+  });
+
+  it('compact labels for the nav pill', () => {
+    // same month → en-dash form
+    expect(weekRangeLabelShort('2026-10-19')).toBe('Oct 19–25');
+    // crossing months → both shown
+    expect(weekRangeLabelShort('2026-10-26')).toBe('Oct 26 – Nov 1');
+    expect(weekRangeLabelShort('2026-12-28')).toBe('Dec 28 – Jan 3');
+    expect(monthLabelShort('2026-10-01')).toBe('Oct 2026');
+  });
+
+  it('clampToMonth keeps the day-of-month, clamped to month length', () => {
+    expect(clampToMonth('2026-01-31', '2026-02-01')).toBe('2026-02-28'); // 2026 not leap
+    expect(clampToMonth('2026-01-31', '2028-02-01')).toBe('2028-02-29'); // leap
+    expect(clampToMonth('2026-10-24', '2026-11-01')).toBe('2026-11-24');
+    expect(clampToMonth('2026-10-05', '2026-10-01')).toBe('2026-10-05'); // same month noop
   });
 });

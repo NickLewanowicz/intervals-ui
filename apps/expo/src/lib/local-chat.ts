@@ -34,6 +34,7 @@ import type {
   OpenRouterMessage,
 } from '@intervals/core';
 import { streamChat, type ChatDone, type ChatStreamOptions } from './api';
+import { titleFromMessage } from './chat-sessions';
 import { getLocalOrKey } from './keystore';
 import { pb } from './pb';
 import type { Proposal, ProposalKind } from './records';
@@ -80,6 +81,13 @@ export function accumulateToolCalls(deltas: Iterable<ToolCallDelta>): Accumulate
 
 const HISTORY_MESSAGES = 20; // same window the Worker sends
 
+/** Bump the session's last-activity stamp (the sessions-list sort key). */
+async function bumpSessionActivity(sessionId: string): Promise<void> {
+  await pb.collection('chat_sessions').update(sessionId, {
+    last_message_at: new Date().toISOString(),
+  });
+}
+
 /** Create a chat session row as the owner (rule allows owner-create). */
 export async function createSessionDirect(
   userId: string,
@@ -88,10 +96,28 @@ export async function createSessionDirect(
 ): Promise<string> {
   const row = await pb.collection('chat_sessions').create({
     user: userId,
-    title: message.slice(0, 60),
+    title: titleFromMessage(message),
+    last_message_at: new Date().toISOString(),
     ...(model ? { model } : {}),
   });
   return String(row.id);
+}
+
+/**
+ * Complete tool calls only: id + name accumulated AND arguments that parse as
+ * JSON. An abort mid-stream can cut a call's argument JSON in half — those
+ * fragments are dropped, never turned into proposals (unit tested).
+ */
+export function completeToolCalls(calls: AccumulatedToolCall[]): AccumulatedToolCall[] {
+  return calls.filter((c) => {
+    if (!c.id || !c.name) return false;
+    try {
+      JSON.parse(c.args || '{}');
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 type PbRow = Record<string, unknown>;
@@ -198,6 +224,8 @@ export interface StreamChatDirectOptions extends ChatStreamOptions {
   onProposal: (p: Proposal) => void;
   onDone: (d: DirectChatDone) => void;
   onError: (e: DirectChatError) => void;
+  /** Fires as soon as the session id is known (kept across client-side aborts). */
+  onSession?: (sessionId: string) => void;
 }
 
 /** Re-run the turn through the Worker path, reporting the fallback. */
@@ -209,6 +237,7 @@ async function runViaWorker(opts: StreamChatDirectOptions, sessionId = opts.sess
     signal: opts.signal,
     onDelta: opts.onDelta,
     onProposal: opts.onProposal,
+    onSession: opts.onSession,
     onDone: (d) => opts.onDone({ ...d, usedFallback: true }),
     onError: (message) => opts.onError({ message, usedFallback: true }),
   });
@@ -248,6 +277,7 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
       return runViaWorker(opts);
     }
   }
+  opts.onSession?.(sessionId);
 
   const messages: OpenRouterMessage[] = [
     { role: 'system', content: system },
@@ -286,6 +316,7 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
       role: 'user',
       content: opts.message,
     });
+    await bumpSessionActivity(sessionId);
   } catch (e) {
     if (isAbort(e)) return;
     // non-fatal: the in-memory turn still streams; history may lose this row
@@ -318,6 +349,7 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
     if (Array.isArray(delta.tool_calls)) toolDeltas.push(...delta.tool_calls);
   };
 
+  let aborted = opts.signal?.aborted === true;
   try {
     if (res.body) {
       await readSSEResponse(res.body, dispatch);
@@ -326,25 +358,35 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
       createSSEParser(dispatch)((await res.text()) + '\n\n');
     }
   } catch (e) {
-    if (isAbort(e)) return;
-    opts.onError({ message: `Chat stream failed: ${String(e).slice(0, 200)}`, usedFallback: false });
-    return;
+    if (!isAbort(e) && !opts.signal?.aborted) {
+      opts.onError({ message: `Chat stream failed: ${String(e).slice(0, 200)}`, usedFallback: false });
+      return;
+    }
+    aborted = true; // stop pressed: fall through and keep the partial
   }
+  if (opts.signal?.aborted) aborted = true;
 
   const toolCalls = accumulateToolCalls(toolDeltas);
+  // a cut-off call's argument JSON may be half a string — persist/propose only
+  // COMPLETE calls (the full stream end already guarantees completeness)
+  const persistableCalls = aborted ? completeToolCalls(toolCalls) : toolCalls;
 
-  // persist the assistant message (same shape the Worker writes)
+  // persist the assistant message (full reply OR partial after a stop — the
+  // transcript survives the trip back; same shape the Worker writes)
   try {
-    await pb.collection('chat_messages').create({
-      session: sessionId,
-      user: userId,
-      role: 'assistant',
-      content: full,
-      tool_calls: toolCalls.length
-        ? toolCalls.map((t) => ({ id: t.id, function: { name: t.name, arguments: t.args } }))
-        : null,
-      usage,
-    });
+    if (full || persistableCalls.length) {
+      await pb.collection('chat_messages').create({
+        session: sessionId,
+        user: userId,
+        role: 'assistant',
+        content: full,
+        tool_calls: persistableCalls.length
+          ? persistableCalls.map((t) => ({ id: t.id, function: { name: t.name, arguments: t.args } }))
+          : null,
+        usage,
+      });
+      await bumpSessionActivity(sessionId);
+    }
   } catch (e) {
     if (isAbort(e)) return;
     // non-fatal: the reply already rendered; only history persistence failed
@@ -352,7 +394,7 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
 
   // tool calls → proposal rows (validated; invalid ones reported, not fatal)
   const proposalErrors: Array<{ tool: string; error: string }> = [];
-  for (const tc of toolCalls) {
+  for (const tc of persistableCalls) {
     if (!tc.name) continue;
     let args: unknown;
     try {
@@ -371,13 +413,17 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
         rationale: rationale ?? null,
         status: 'pending',
       });
-      opts.onProposal({
-        id: String(row.id),
-        kind: kind as ProposalKind,
-        payload: payload as Proposal['payload'],
-        rationale: rationale ?? null,
-        status: 'pending',
-      });
+      // a stopped turn still persists its proposal (row above) but must not
+      // pop the modal — the inline card + post-turn refresh surface it
+      if (!aborted) {
+        opts.onProposal({
+          id: String(row.id),
+          kind: kind as ProposalKind,
+          payload: payload as Proposal['payload'],
+          rationale: rationale ?? null,
+          status: 'pending',
+        });
+      }
     } catch (e) {
       if (e instanceof ProposalValidationError) {
         proposalErrors.push({ tool: tc.name, error: e.message });
@@ -386,6 +432,8 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
       }
     }
   }
+
+  if (aborted) return; // stop: partial persisted above — no done/error event
 
   if (!full && !toolCalls.length && !usage) {
     opts.onError({ message: 'Coach returned an empty response — try again.', usedFallback: false });

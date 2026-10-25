@@ -8,7 +8,9 @@ import { listProposals, type SyncResult } from './api';
 import {
   calendarWindowFilter,
   chatMessagesFilter,
+  chatSessionsFilter,
   intervalsIdFilter,
+  sessionProposalsFilter,
   sportSettingsFilter,
   syncStateFilter,
   wellnessFilter,
@@ -20,7 +22,9 @@ export const queryKeys = {
   calendar: (from: string, to: string) => ['calendar', from, to] as const,
   wellness: (days: number) => ['wellness', days] as const,
   syncState: ['sync-state'] as const,
+  chatSessions: ['chat-sessions'] as const,
   chatMessages: (sessionId: string) => ['chat-messages', sessionId] as const,
+  sessionProposals: (sessionId: string) => ['session-proposals', sessionId] as const,
   pendingProposals: ['pending-proposals'] as const,
   mirroredEvent: (intervalsId: number) => ['mirrored-event', intervalsId] as const,
   thresholdPace: ['threshold-pace'] as const,
@@ -159,6 +163,8 @@ export interface ChatMessageRow {
   role: 'user' | 'assistant';
   content: string;
   created: string;
+  /** tool-call-only turn (persisted with empty content) — renders the anchor + cards */
+  toolOnly: boolean;
 }
 
 export function useChatMessages(sessionId: string | null): UseQueryResult<ChatMessageRow[]> {
@@ -170,11 +176,96 @@ export function useChatMessages(sessionId: string | null): UseQueryResult<ChatMe
       const res = await pb
         .collection('chat_messages')
         .getList(1, 100, { filter: chatMessagesFilter(sessionId), sort: 'created' });
+      return res.items.map((r) => {
+        const toolCalls = Array.isArray(r.tool_calls) ? r.tool_calls : [];
+        return {
+          id: r.id,
+          role: r.role === 'assistant' ? 'assistant' : 'user',
+          content: String(r.content ?? ''),
+          created: String(r.created ?? ''),
+          toolOnly: r.role === 'assistant' && !String(r.content ?? '') && toolCalls.length > 0,
+        };
+      });
+    },
+  });
+}
+
+// ---------- chat sessions (round-10 multi-session) ----------
+
+export interface ChatSessionRow {
+  id: string;
+  title: string;
+  pinned: boolean;
+  /** ISO last-activity stamp ('' when the row predates the field). */
+  lastMessageAt: string;
+  created: string;
+}
+
+/** All of the user's chat sessions (list screen sorts/groups client-side). */
+export function useChatSessions(): UseQueryResult<ChatSessionRow[]> {
+  return useQuery({
+    queryKey: queryKeys.chatSessions,
+    enabled: !!currentUserId(),
+    queryFn: async (): Promise<ChatSessionRow[]> => {
+      const user = currentUserId();
+      if (!user) return [];
+      const res = await pb
+        .collection('chat_sessions')
+        .getList(1, 100, { filter: chatSessionsFilter(user), sort: '-created' });
       return res.items.map((r) => ({
-        id: r.id,
-        role: r.role === 'assistant' ? 'assistant' : 'user',
-        content: String(r.content ?? ''),
+        id: String(r.id),
+        title: String(r.title ?? 'Untitled chat'),
+        pinned: r.pinned === true,
+        lastMessageAt: String(r.last_message_at ?? ''),
         created: String(r.created ?? ''),
+      }));
+    },
+  });
+}
+
+/** Owner-scoped session mutations (updateRule allows owner updates). */
+export async function renameChatSession(id: string, title: string): Promise<void> {
+  await pb.collection('chat_sessions').update(id, { title });
+}
+
+export async function setChatSessionPinned(id: string, pinned: boolean): Promise<void> {
+  await pb.collection('chat_sessions').update(id, { pinned });
+}
+
+export async function deleteChatSession(id: string): Promise<void> {
+  await pb.collection('chat_sessions').delete(id); // cascade deletes the session's messages
+}
+
+/** Invalidate everything a session mutation could have changed. */
+export function useInvalidateChatData() {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: ['chat-sessions'] });
+    void qc.invalidateQueries({ queryKey: ['chat-messages'] });
+    void qc.invalidateQueries({ queryKey: ['session-proposals'] });
+  };
+}
+
+/**
+ * Every proposal produced in one session, any status — the inline transcript
+ * cards (LobeChat plugin-card pattern). Statuses refresh via invalidation
+ * after a modal resolution.
+ */
+export function useSessionProposals(sessionId: string | null): UseQueryResult<Proposal[]> {
+  return useQuery({
+    queryKey: queryKeys.sessionProposals(sessionId ?? 'none'),
+    enabled: !!sessionId,
+    queryFn: async (): Promise<Proposal[]> => {
+      if (!sessionId) return [];
+      const res = await pb
+        .collection('proposals')
+        .getList(1, 50, { filter: sessionProposalsFilter(sessionId), sort: '-created' });
+      return res.items.map((r) => ({
+        id: String(r.id),
+        kind: (r.kind as Proposal['kind']) ?? 'create_event',
+        payload: (r.payload ?? {}) as EventEx,
+        rationale: typeof r.rationale === 'string' ? r.rationale : null,
+        status: typeof r.status === 'string' ? r.status : 'pending',
       }));
     },
   });

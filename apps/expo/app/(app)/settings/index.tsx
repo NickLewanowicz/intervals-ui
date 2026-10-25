@@ -146,6 +146,10 @@ export default function SettingsScreen() {
         <View style={{ flex: 1 }}>
           <Text style={s.userName}>{user.name || 'Athlete'}</Text>
           <Text style={s.userEmail}>{user.email}</Text>
+          {/* transparency: when this record last changed (any settings save).
+              Background profile updates don't exist — this is purely a record
+              timestamp, no sync implied. */}
+          <Text style={s.userMeta}>Updated {relativeTime(user.updated)}</Text>
         </View>
         <Button
           title="Sign out"
@@ -365,6 +369,7 @@ const styles = (p: Palette) =>
     avatarText: { color: p.accentText, fontSize: fontSize.h, fontWeight: '700' },
     userName: { color: p.text, fontSize: fontSize.body, fontWeight: '600' },
     userEmail: { color: p.muted, fontSize: fontSize.small },
+    userMeta: { color: p.muted, fontSize: fontSize.tiny, fontVariant: ['tabular-nums'] },
     testMsg: { color: p.muted, fontSize: fontSize.small },
     syncLine: { color: p.muted, fontSize: fontSize.tiny },
     fieldLabel: { color: p.muted, fontSize: fontSize.small },

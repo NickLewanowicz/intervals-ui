@@ -110,7 +110,35 @@ Sync `sync`, reveal `eye-outline`/`eye-off-outline` (hold to reveal), send
 | Proposal modal | native `animationType`: slide (bottom sheet, <720px) / fade (centered, ≥720px) |
 | Streaming text | content + `▌` caret; typing dots only until first token |
 
+## Round 9 — layout system (2026-10-25)
+
+Owner verdict fixed: "a bunch of floating cards on a page" → one surface with
+internal rhythm.
+
+- **Page rhythm** (`theme.pageSpacing`): `navToContent 12` (chrome → first
+  block) · `sectionGap 20` (stats card ↔ calendar list) · `cardGap 8` ·
+  `cardPad 16` · `rowPadX/Y 14/12` (rows inside a group card). Measured
+  identical on 375/1280, light/dark.
+- **Compact glass nav**: the calendar header is now a floating pill (tab-bar
+  chassis, radius 24, `glassStrong`) — 69px tall vs the old 116px stacked bar
+  (−40.5%), controls 26–30px with hitSlop keeping ≥44pt targets. Row 1:
+  ‹ title › + Today; row 2: Week/Month segmented + sync. Sync freshness moved
+  into the stats-card header (it describes the data, not the chrome).
+- **Week sheet**: the 7 day cards are now ROWS inside ONE containing card with
+  hairline separators — no floating siblings. Today row = `accentSoft` wash.
+- **Month view**: tapping a day SELECTS it (accent ring) and renders its
+  entries in a panel below the grid (same card, hairline dividers); the panel
+  chevron (or long-press) opens the full day route. Selection persists across
+  month navigation, clamped to the month's length (`clampToMonth`).
+- **Stats card v2** (metrics spec §3): PRIMARY = headline verdict (state ·
+  hold-flat load), form line (arrow + band word), planned→actual strip with
+  the honesty split (+unplanned · missed); SECONDARY "Details" disclosure =
+  fitness trend, zone balance (stacked LOW/MOD/HIGH + spec flags + fence
+  riders), gap card (hold-flat/to-zero math in `packages/core/src/stats.ts`),
+  7-day recovery directions. Gap-math fixtures live in `packages/core/tests`.
+
 ## Screen patterns (round-2 state)
+
 
 - **Headers** are fixed GlassBars (safe-area padded); the body scrolls under
   them in its own ScrollView (FIX-2: tab scenes clip — plain Views never

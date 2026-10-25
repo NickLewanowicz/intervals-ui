@@ -126,6 +126,29 @@ export const spacing = {
   xxxl: 48,
 } as const;
 
+/**
+ * Page-level rhythm (round 9): the vertical story of a screen, named once so
+ * spacing stops being arbitrary. Chrome → content at navToContent; major
+ * sections separate at sectionGap; sibling surfaces inside a section at
+ * cardGap. List rows are NOT separate cards — they live inside ONE containing
+ * card with hairline separators (the anti-"floating cards" rule), padded by
+ * rowPadX/rowPadY, inside a card padded by cardPad.
+ */
+export const pageSpacing = {
+  /** Fixed chrome (nav bar) → first content block. */
+  navToContent: 12,
+  /** Between major sections (stats card ↔ calendar list). */
+  sectionGap: 20,
+  /** Between sibling surfaces in one section (hint/empty rows, month panel). */
+  cardGap: 8,
+  /** Internal padding of a containing card. */
+  cardPad: 16,
+  /** Horizontal padding of rows inside a group card. */
+  rowPadX: 14,
+  /** Vertical padding of rows inside a group card. */
+  rowPadY: 12,
+} as const;
+
 export const fontSize = {
   tiny: 11,
   small: 13,

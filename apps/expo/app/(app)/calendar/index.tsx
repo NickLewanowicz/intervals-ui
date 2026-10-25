@@ -1,8 +1,15 @@
 /**
- * THE core screen. Week view (7 day cards, planned vs recorded) with a
- * monthly grid toggle, stats strip (week- or month-scoped — FIX-3), manual
- * sync with last-sync freshness (FIX-6), and a fixed glass header over a
- * truly scrolling body (FIX-2). Week/month switches get a ≤200ms slide+fade.
+ * THE core screen. Round-9 layout system:
+ * - ONE compact floating glass pill nav (two tight rows, ~40% shorter than
+ *   the old stacked header — no dead vertical space).
+ * - Page rhythm from theme.pageSpacing: nav → content, stats card → list,
+ *   rows INSIDE one containing card with hairline separators (no more
+ *   scattered floating day cards).
+ * - Week view: a single "week sheet" — 7 day rows, tap opens day detail.
+ * - Month view: tap selects a day (ring) and its entries render in a panel
+ *   BELOW the grid (selection persists across month navigation, clamped to
+ *   the month); long-press or the panel chevron opens the full day route.
+ * - Stats card v2 (StatsCard.tsx): PRIMARY state + verdict, SECONDARY details.
  */
 import {
   averagePaceMinPerKm,
@@ -11,35 +18,41 @@ import {
   formatKm,
   isRaceEvent,
   weeklyStats,
+  type DayCell,
   type WeeklyStats,
 } from '@intervals/core';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassBar, GlassCard } from '@/components/glass';
 import { PressableScale, SlideFadeIn } from '@/components/motion';
 import { Badge, Button, Empty, ErrorBox, IconButton, Loading } from '@/components/ui';
+import StatsCard from './StatsCard';
 import { triggerSync } from '@/lib/api';
 import {
   addDays,
   addMonths,
+  clampToMonth,
   dayLabel,
   isInMonth,
+  MONTHS,
   monthAnchor,
   monthGrid,
+  monthLabelShort,
   startOfWeek,
   todayISO,
   weekDates,
   weekRangeLabel,
+  weekRangeLabelShort,
   weekWindow,
+  weekdayIndex,
 } from '@/lib/dates';
 import { activityLine, eventLine, relativeTime } from '@/lib/format';
-import { useCalendarWindow, useInvalidateMirrors, useSyncState, useThresholdPace } from '@/lib/queries';
-import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
+import { useCalendarWindow, useInvalidateMirrors, useSyncState, useThresholdPace, useWellness } from '@/lib/queries';
+import { fontSize, layout, pageSpacing, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
-import type { DayCell } from '@intervals/core';
 
 /** Host node type accepted by measureLayout (derived, no deep RN import). */
 type HostNode = Parameters<InstanceType<typeof View>['measureLayout']>[0];
@@ -52,33 +65,34 @@ export default function CalendarScreen() {
   const [view, setView] = useState<'week' | 'month'>('week');
   const [weekStart, setWeekStart] = useState(() => startOfWeek(todayISO()));
   const [monthAnc, setMonthAnc] = useState(() => monthAnchor(todayISO()));
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const week = weekWindow(weekStart);
   const grid = useMemo(() => monthGrid(monthAnc), [monthAnc]);
   const window = view === 'week' ? week : { from: grid.from, to: grid.to };
 
   const { data, isLoading, isFetching, isError, error, refetch } = useCalendarWindow(window.from, window.to);
+  // the live week — verdict + gap stay about THIS week even in other windows
+  const liveWeek = weekWindow(startOfWeek(today));
+  const live = useCalendarWindow(liveWeek.from, liveWeek.to);
+  const wellness = useWellness(30);
   const syncState = useSyncState();
   const thresholdPace = useThresholdPace();
   const invalidateMirrors = useInvalidateMirrors();
 
-  // round-8 FIX-3: a first-load (no data yet, fetch in flight) shows the
-  // skeleton ON this screen — never a blank body. isLoading alone misses the
-  // seeding/refetch states (isFetching), so combine them.
+  // round-8 FIX-3: first load shows the skeleton ON this screen — never a
+  // blank body. isLoading alone misses seeding/refetch (isFetching).
   const firstLoad = !data && (isLoading || isFetching);
 
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   // persona finding #9: the daily loop must not start with a hunt for today.
-  // Scroll today's day card into view on mount / week change. Measured via
-  // measureLayout(card → scroll node) — onLayout alone is unreliable on web
-  // (offsetParent-relative), while measureLayout is exact on both platforms.
+  // Scroll today's day row into view on mount / week change (week view only).
   const scrollRef = useRef<ScrollView>(null);
   const cardRefs = useRef(new Map<string, View | null>());
   const weekDatesList = weekDates(weekStart);
   const todayInWeek = weekDatesList.includes(today);
-  // layout bumps re-arm the effect until the measurement can act
   const [measureTick, setMeasureTick] = useState(0);
   const noteCardLayout = (date: string) => () => {
     if (date === today) setMeasureTick((t) => t + 1);
@@ -89,19 +103,26 @@ export default function CalendarScreen() {
     const scroller = scrollRef.current;
     const card = cardRefs.current.get(today);
     if (!scroller || !card) return;
-    // the scroller's underlying scroll node (the RNW host div exposes it too)
     const rel = scroller.getNativeScrollRef() ?? (scroller as unknown as HostNode);
     card.measureLayout(
       rel,
       (_x, y) => {
-        // land the today card just under the top edge with a little air;
-        // the view clamps when today sits near the end of the week (no
-        // content below to fill the viewport) — the card still lands visible
         scroller.scrollTo({ y: Math.max(0, y - spacing.md), animated: true });
       },
       () => undefined, // not laid out yet — the next layout tick retries
     );
   }, [view, weekStart, isLoading, isError, data, today, todayInWeek, measureTick]);
+
+  // month view: keep a sensible selection — today when present, else the 1st;
+  // an existing selection that lives in the month survives navigation.
+  const gridDates = useMemo(() => grid.weeks.flat(), [grid]);
+  useEffect(() => {
+    if (view !== 'month') return;
+    setSelectedDate((prev) => {
+      if (prev && gridDates.includes(prev)) return prev;
+      return gridDates.includes(today) ? today : monthAnc;
+    });
+  }, [view, monthAnc, gridDates, today]);
 
   const events = data?.events ?? [];
   const activities = data?.activities ?? [];
@@ -158,13 +179,20 @@ export default function CalendarScreen() {
   prevKey.current = navKey;
 
   const step = (n: -1 | 1) => {
-    if (view === 'week') setWeekStart(addDays(weekStart, 7 * n));
-    else setMonthAnc(addMonths(monthAnc, n));
+    if (view === 'week') {
+      setWeekStart(addDays(weekStart, 7 * n));
+      return;
+    }
+    const next = addMonths(monthAnc, n);
+    setMonthAnc(next);
+    // persist the selection into the new month (same day, clamped to length)
+    setSelectedDate((prev) => (prev ? clampToMonth(prev, next) : prev));
   };
 
   const goToday = () => {
     setWeekStart(startOfWeek(today));
     setMonthAnc(monthAnchor(today));
+    if (view === 'month') setSelectedDate(today);
   };
 
   const onSync = async () => {
@@ -184,22 +212,46 @@ export default function CalendarScreen() {
   const goDay = (date: string) => router.push({ pathname: '/calendar/day', params: { date } });
 
   const lastSync = syncState.data?.lastSync ?? null;
+  const navTitle = view === 'week' ? weekRangeLabelShort(weekStart) : grid.label;
+  const sundayLabel = `Sun ${addDays(startOfWeek(today), 6).slice(8, 10)}`;
 
   return (
-    <View style={[s.page, { paddingTop: insets.top }]}>
-      {/* fixed glass header: nav + view toggle + sync (FIX-6 freshness chip) */}
-      <GlassBar edge="bottom" style={s.headerBar}>
-        <View style={s.headerInner}>
-          <View style={s.navRow}>
-            <IconButton icon="chevron-back" label="Previous" onPress={() => step(-1)} />
-            <Text style={s.title} numberOfLines={1}>
-              {view === 'week' ? weekRangeLabel(weekStart) : grid.label}
+    <View style={s.page}>
+      {/* compact floating glass pill nav (round 9): nav row + view/sync row */}
+      <View style={[s.headerWrap, { paddingTop: insets.top + spacing.sm }]}>
+        <GlassBar edge="none" floating style={s.headerPill} testID="nav-pill">
+          <View style={s.headerRow}>
+            <IconButton
+              icon="chevron-back"
+              label="Previous"
+              onPress={() => step(-1)}
+              size={17}
+              hitSlop={7}
+              style={s.pillBtn}
+            />
+            <Text accessibilityRole="header" style={s.title} numberOfLines={1}>
+              {navTitle}
             </Text>
-            <IconButton icon="chevron-forward" label="Next" onPress={() => step(1)} />
-            <View style={{ flex: 1 }} />
-            <Button title="Today" variant="ghost" onPress={goToday} />
+            <IconButton
+              icon="chevron-forward"
+              label="Next"
+              onPress={() => step(1)}
+              size={17}
+              hitSlop={7}
+              style={s.pillBtn}
+            />
+            <View style={s.spring} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go to today"
+              onPress={goToday}
+              hitSlop={8}
+              style={s.todayBtn}
+            >
+              <Text style={s.todayText}>Today</Text>
+            </Pressable>
           </View>
-          <View style={s.subRow}>
+          <View style={s.headerRow}>
             <View style={s.segmented}>
               {(['week', 'month'] as const).map((v) => {
                 const active = view === v;
@@ -219,50 +271,53 @@ export default function CalendarScreen() {
                 );
               })}
             </View>
-            <View style={{ flex: 1 }} />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Sync status — open settings"
-              onPress={() => router.push('/settings')}
-              style={s.syncChip}
-            >
-              <Text style={s.syncFresh} numberOfLines={1}>
-                {lastSync ? `synced ${relativeTime(lastSync)}` : 'not synced yet'}
-              </Text>
-            </Pressable>
-            <IconButton icon="sync" label="Sync now" onPress={() => void onSync()} loading={syncing} />
+            <View style={s.spring} />
+            <IconButton
+              icon="sync"
+              label="Sync now"
+              onPress={() => void onSync()}
+              loading={syncing}
+              size={15}
+              hitSlop={10}
+              style={s.syncBtn}
+            />
           </View>
-          {syncMsg ? (
-            <Text style={s.syncMsg} numberOfLines={1}>
-              {syncMsg}
-            </Text>
-          ) : null}
-        </View>
-      </GlassBar>
+        </GlassBar>
+        {syncMsg ? (
+          <Text style={s.syncMsg} numberOfLines={1}>
+            {syncMsg}
+          </Text>
+        ) : null}
+      </View>
 
-      {/* scrolling body (FIX-2) */}
+      {/* scrolling body */}
       <ScrollView
         ref={scrollRef}
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <SlideFadeIn dep={navKey} direction={dir}>
-          <GlassCard style={[s.statsCard, view === 'month' && s.statsCardMonth]}>
-            <StatsStrip
-              caption={
-                view === 'week'
-                  ? `planned vs actual · week of ${weekRangeLabel(weekStart).split(' – ')[0]}`
-                  : `planned vs actual · ${grid.label}`
-              }
-              stats={view === 'week' ? stats : monthStats}
-              showLongest={view === 'week'}
-            />
-          </GlassCard>
-          {(view === 'week' ? stats : monthStats).plannedDistanceEstimated ||
-          (view === 'week' ? stats : monthStats).plannedTimeEstimated ? (
-            <Text style={s.statFootnote}>≈ estimated from time at your recent pace</Text>
-          ) : null}
+        <SlideFadeIn dep={navKey} direction={dir} style={s.section}>
+          <StatsCard
+            caption={
+              view === 'week'
+                ? `planned vs actual · week of ${weekRangeLabel(weekStart).split(' – ')[0]}`
+                : `planned vs actual · ${grid.label}`
+            }
+            stats={view === 'week' ? stats : monthStats}
+            showLongest={view === 'week'}
+            showZones={view === 'week'}
+            freshness={lastSync ? relativeTime(lastSync) : null}
+            onFreshnessPress={() => router.push('/settings')}
+            wellness={wellness.data ?? []}
+            wellnessLoading={!wellness.data && (wellness.isLoading || wellness.isFetching)}
+            today={today}
+            currentWeek={{
+              events: live.data?.events ?? [],
+              activities: live.data?.activities ?? [],
+              horizonLabel: sundayLabel,
+            }}
+          />
 
           {firstLoad ? (
             <Loading label="Loading calendar…" />
@@ -272,26 +327,29 @@ export default function CalendarScreen() {
               onRetry={() => void refetch()}
             />
           ) : view === 'week' ? (
-            <View style={s.days}>
-              {weekDatesList.map((date) => (
-                <View
-                  key={date}
-                  ref={(v) => {
-                    cardRefs.current.set(date, v);
-                  }}
-                  onLayout={noteCardLayout(date)}
-                >
-                  <DayCard
-                    date={date}
-                    cell={cells.get(date) ?? { date, events: [], activities: [] }}
-                    today={date === today}
-                    onOpen={goDay}
-                  />
-                </View>
+            /* ONE surface: day rows with hairline separators (no floating cards) */
+            <GlassCard style={s.weekGroup} testID="week-group">
+              {weekDatesList.map((date, i) => (
+                <Fragment key={date}>
+                  {i > 0 ? <View style={s.rowSep} /> : null}
+                  <View
+                    ref={(v) => {
+                      cardRefs.current.set(date, v);
+                    }}
+                    onLayout={noteCardLayout(date)}
+                  >
+                    <DayRow
+                      date={date}
+                      cell={cells.get(date) ?? { date, events: [], activities: [] }}
+                      today={date === today}
+                      onOpen={goDay}
+                    />
+                  </View>
+                </Fragment>
               ))}
-            </View>
+            </GlassCard>
           ) : (
-            <GlassCard style={s.monthCard}>
+            <GlassCard style={s.monthCard} testID="month-card">
               <View style={s.monthHeaderRow}>
                 {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
                   <Text key={d} style={s.monthDow}>
@@ -310,7 +368,9 @@ export default function CalendarScreen() {
                         cell={cell}
                         inMonth={isInMonth(date, monthAnc)}
                         today={date === today}
-                        onOpen={goDay}
+                        selected={selectedDate === date}
+                        onSelect={() => setSelectedDate(date)}
+                        onOpen={() => goDay(date)}
                       />
                     );
                   })}
@@ -325,6 +385,31 @@ export default function CalendarScreen() {
                 <LegendDot kind="race" />
                 <Text style={s.legendText}>race</Text>
               </View>
+              {/* selected-day panel: the day's entries BELOW the grid, no navigation */}
+              {selectedDate ? (
+                <View style={s.dayPanel}>
+                  <View style={s.rowSep} />
+                  <View style={s.panelHead}>
+                    <Text style={s.panelTitle}>
+                      {`${dayLabel(selectedDate)} ${MONTHS[Number(selectedDate.slice(5, 7)) - 1]!.slice(0, 3)}`}
+                    </Text>
+                    {selectedDate === today ? <Badge label="today" tone="accent" /> : null}
+                    <View style={s.spring} />
+                    <IconButton
+                      icon="chevron-forward"
+                      label={`Open full day detail for ${dayLabel(selectedDate)}`}
+                      onPress={() => goDay(selectedDate)}
+                      size={15}
+                      hitSlop={8}
+                      style={s.panelOpenBtn}
+                    />
+                  </View>
+                  <DayEntries
+                    cell={cells.get(selectedDate) ?? { date: selectedDate, events: [], activities: [] }}
+                    emptyText="Rest day — nothing planned, nothing recorded."
+                  />
+                </View>
+              ) : null}
             </GlassCard>
           )}
           {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
@@ -339,105 +424,8 @@ export default function CalendarScreen() {
   );
 }
 
-function StatsStrip({
-  caption,
-  stats,
-  showLongest,
-}: {
-  caption: string;
-  stats: Pick<
-    WeeklyStats,
-    | 'plannedDistanceM'
-    | 'plannedTimeSec'
-    | 'plannedLoad'
-    | 'actualDistanceM'
-    | 'actualTimeSec'
-    | 'actualLoad'
-    | 'longestRunM'
-    | 'plannedDistanceEstimated'
-    | 'plannedTimeEstimated'
-  >;
-  showLongest: boolean;
-}) {
-  const { colors } = useTheme();
-  const s = styles(colors);
-  return (
-    <>
-      <View style={s.statsGrid}>
-        <Stat
-          label="Distance"
-          planned={fmtKmOrDash(stats.plannedDistanceM, stats.plannedDistanceEstimated)}
-          actual={fmtKmOrDash(stats.actualDistanceM)}
-        />
-        <Stat
-          label="Time"
-          planned={fmtDurOrDash(stats.plannedTimeSec, stats.plannedTimeEstimated)}
-          actual={stats.actualTimeSec ? formatDuration(stats.actualTimeSec) : '—'}
-        />
-        <Stat
-          label="Load"
-          planned={stats.plannedLoad ? String(Math.round(stats.plannedLoad)) : '—'}
-          actual={stats.actualLoad ? String(Math.round(stats.actualLoad)) : '—'}
-        />
-        {showLongest ? (
-          <Stat
-            label="Longest run"
-            actual={stats.longestRunM ? formatKm(stats.longestRunM) : '—'}
-            planned="—"
-            hidePlanned
-          />
-        ) : null}
-      </View>
-      <Text style={s.statsHint}>{caption}</Text>
-    </>
-  );
-}
-
-/** Planned cells carry "≈" when (part of) the total was pace-estimated. */
-function fmtKmOrDash(m: number, estimated?: boolean): string {
-  return m > 0 ? (estimated ? '≈' : '') + formatKm(m) : '—';
-}
-
-function fmtDurOrDash(sec: number, estimated?: boolean): string {
-  return sec > 0 ? (estimated ? '≈' : '') + formatDuration(sec) : '—';
-}
-
-function Stat({
-  label,
-  planned,
-  actual,
-  hidePlanned,
-}: {
-  label: string;
-  planned: string;
-  actual: string;
-  hidePlanned?: boolean;
-}) {
-  const { colors } = useTheme();
-  const s = styles(colors);
-  return (
-    <View style={s.stat}>
-      <Text style={s.statLabel}>{label}</Text>
-      <Text style={s.statValues}>
-        {hidePlanned ? null : <Text style={s.statPlanned}>{planned}</Text>}
-        {hidePlanned ? null : <Text style={s.statSep}> → </Text>}
-        <Text style={s.statActual}>{actual}</Text>
-      </Text>
-    </View>
-  );
-}
-
-function DayCard({
-  date,
-  cell,
-  today,
-  onOpen,
-}: {
-  date: string;
-  cell: DayCell;
-  today: boolean;
-  onOpen: (date: string) => void;
-}) {
+/** Entries of one day: planned events (merged with their recorded actual) + lone activities. */
+function DayEntries({ cell, emptyText = 'Rest day' }: { cell: DayCell; emptyText?: string }) {
   const { colors } = useTheme();
   const s = styles(colors);
   const pairedActivityIds = new Set(
@@ -448,20 +436,11 @@ function DayCard({
   );
   const loneActivities = cell.activities.filter((a) => !pairedEvents.has(a.paired_event_id ?? -1));
 
+  if (cell.events.length === 0 && loneActivities.length === 0) {
+    return <Text style={s.dayEmpty}>{emptyText}</Text>;
+  }
   return (
-    <PressableScale
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${dayLabel(date)}`}
-      onPress={() => onOpen(date)}
-      style={[s.dayCard, today && s.dayCardToday]}
-    >
-      <View style={s.dayHead}>
-        <Text style={[s.dayName, today && { color: colors.accentText }]}>{dayLabel(date)}</Text>
-        {today ? <Badge label="today" tone="accent" /> : null}
-      </View>
-      {cell.events.length === 0 && loneActivities.length === 0 ? (
-        <Text style={s.dayEmpty}>Rest day</Text>
-      ) : null}
+    <View style={s.entries}>
       {cell.events.map((e) => {
         const actual = cell.activities.find((a) => a.paired_event_id === e.id);
         const race = isRaceEvent(e);
@@ -493,23 +472,60 @@ function DayCard({
           <Text style={s.entryMeta}>{activityLine(a)}</Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/** One day row inside the week sheet (round 9: a row, not a floating card). */
+function DayRow({
+  date,
+  cell,
+  today,
+  onOpen,
+}: {
+  date: string;
+  cell: DayCell;
+  today: boolean;
+  onOpen: (date: string) => void;
+}) {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${dayLabel(date)}`}
+      onPress={() => onOpen(date)}
+      style={[s.dayRow, today && s.dayRowToday]}
+    >
+      <View style={s.dayHead}>
+        <Text style={[s.dayName, today && { color: colors.accentText }]}>{dayLabel(date)}</Text>
+        {today ? <Badge label="today" tone="accent" /> : null}
+      </View>
+      <DayEntries cell={cell} />
     </PressableScale>
   );
 }
 
-/** FIX-12: planned ○ muted · recorded ● text-tint · race ● race-tint. */
+/**
+ * Month cell (round 9): tap SELECTS — the day's entries show in the panel
+ * below the grid. Long-press (or the panel chevron) opens the full day route.
+ */
 function MonthCell({
   date,
   cell,
   inMonth,
   today,
+  selected,
+  onSelect,
   onOpen,
 }: {
   date: string;
   cell: DayCell;
   inMonth: boolean;
   today: boolean;
-  onOpen: (date: string) => void;
+  selected: boolean;
+  onSelect: () => void;
+  onOpen: () => void;
 }) {
   const { colors } = useTheme();
   const s = styles(colors);
@@ -517,22 +533,35 @@ function MonthCell({
   const plans = cell.events.length - races;
   const recs = cell.activities.length;
   return (
-    <PressableScale
+    <Pressable
       accessibilityRole="button"
+      accessibilityState={selected ? { selected: true } : {}}
       accessibilityLabel={`${date}: ${cell.events.length} planned, ${cell.activities.length} recorded`}
-      onPress={() => onOpen(date)}
-      style={[s.monthCell, today && s.monthCellToday, !inMonth && s.monthCellOut]}
+      accessibilityHint="Shows the day below the calendar. Long-press for full detail."
+      onPress={onSelect}
+      onLongPress={onOpen}
+      style={[
+        s.monthCell,
+        today && s.monthCellToday,
+        selected && s.monthCellSelected,
+        !inMonth && s.monthCellOut,
+      ]}
     >
       <Text style={s.monthDayNum}>{date.slice(8, 10)}</Text>
       <View style={s.dots}>
         {plans > 0 ? <View style={[s.dotPlan, { borderColor: colors.muted }]} /> : null}
-        {races > 0 ? <View style={[s.dotRace, { backgroundColor: colors.race, borderColor: colors.race }]} /> : null}
-        {recs > 0 ? <View style={[s.dotDone, { backgroundColor: colors.text, borderColor: colors.text }]} /> : null}
+        {races > 0 ? (
+          <View style={[s.dotRace, { backgroundColor: colors.race, borderColor: colors.race }]} />
+        ) : null}
+        {recs > 0 ? (
+          <View style={[s.dotDone, { backgroundColor: colors.text, borderColor: colors.text }]} />
+        ) : null}
       </View>
-    </PressableScale>
+    </Pressable>
   );
 }
 
+/** FIX-12: planned ○ muted · recorded ● text-tint · race ● race-tint. */
 function LegendDot({ kind }: { kind: 'plan' | 'done' | 'race' }) {
   const { colors } = useTheme();
   if (kind === 'plan') return <View style={[styles(colors).dotPlan, { borderColor: colors.muted }]} />;
@@ -544,89 +573,98 @@ function LegendDot({ kind }: { kind: 'plan' | 'done' | 'race' }) {
 const styles = (p: Palette) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: p.bg },
-    headerBar: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2 },
-    headerInner: { maxWidth: layout.maxW, width: '100%', alignSelf: 'center', gap: spacing.sm },
-    navRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    subRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    // --- compact floating pill nav (round 9) ---
+    headerWrap: { paddingHorizontal: layout.tabBarInset },
+    headerPill: {
+      alignSelf: 'center',
+      width: '100%',
+      maxWidth: layout.maxW,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      gap: 2,
+    },
+    headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
+    pillBtn: { width: 30, height: 30, borderRadius: radius.sm + 2 },
     title: {
       color: p.text,
-      fontSize: fontSize.body + 2,
+      fontSize: fontSize.body,
       fontWeight: '700',
       flexShrink: 1,
       fontVariant: ['tabular-nums'],
     },
+    spring: { flex: 1 },
+    todayBtn: {
+      minHeight: 30,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.sm + 2,
+      borderRadius: radius.sm + 2,
+    },
+    todayText: { color: p.accentText, fontSize: fontSize.small, fontWeight: '700' },
     segmented: {
       flexDirection: 'row',
       backgroundColor: p.bg,
       borderRadius: radius.pill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.border,
-      padding: 3,
+      padding: 2,
       gap: 2,
     },
     segBtn: {
       borderRadius: radius.pill,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 5,
+      paddingHorizontal: spacing.md - 2,
+      paddingVertical: 3,
       alignItems: 'center',
       justifyContent: 'center',
-      minWidth: 64,
-      // +3px container padding top/bottom = 44px control height (round-3 audit F4)
-      minHeight: layout.minTouch - 6,
+      minWidth: 54,
     },
-    segText: { fontSize: fontSize.small, fontWeight: '600' },
-    // F5: the chip is a real ≥44pt target (was a 13px Text + hitSlop)
-    syncChip: {
-      minHeight: layout.minTouch,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: spacing.xs,
-      marginRight: spacing.sm,
+    segText: { fontSize: fontSize.tiny + 1, fontWeight: '600' },
+    syncBtn: { width: 26, height: 26, borderRadius: radius.sm + 1 },
+    syncMsg: {
+      color: p.muted,
+      fontSize: fontSize.tiny,
+      textAlign: 'center',
+      marginTop: spacing.xs,
     },
-    syncFresh: { color: p.muted, fontSize: fontSize.tiny, flexShrink: 1 },
-    syncMsg: { color: p.muted, fontSize: fontSize.tiny, marginTop: spacing.xs },
+    // --- body rhythm (pageSpacing, round 9) ---
     scroll: { flex: 1 },
     scrollContent: {
       maxWidth: layout.maxW,
       width: '100%',
       alignSelf: 'center',
-      padding: spacing.lg,
+      paddingLeft: spacing.lg,
+      paddingRight: spacing.lg,
+      paddingTop: pageSpacing.navToContent,
       paddingBottom: spacing.xxxl + layout.tabBarHeight,
-      gap: spacing.md,
     },
-    statsCard: { padding: spacing.lg, gap: spacing.sm },
-    statsCardMonth: { alignSelf: 'center', width: '100%', maxWidth: 560 },
-    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
-    stat: { gap: 2, minWidth: 90 },
-    statLabel: { color: p.muted, fontSize: fontSize.tiny, textTransform: 'uppercase', letterSpacing: 0.5 },
-    statValues: { fontSize: fontSize.body, fontVariant: ['tabular-nums'] },
-    statPlanned: { color: p.muted },
-    statSep: { color: p.muted },
-    statActual: { color: p.text, fontWeight: '600' },
-    statsHint: { color: p.muted, fontSize: fontSize.tiny },
-    statFootnote: { color: p.muted, fontSize: fontSize.tiny, marginTop: -spacing.sm + 2 },
-    days: { gap: spacing.sm },
-    dayCard: {
-      backgroundColor: p.card,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.border,
-      padding: spacing.md,
+    // the section stack lives INSIDE the slide transition (one animated view)
+    section: { gap: pageSpacing.sectionGap },
+    // --- week sheet: ONE containing card, hairline-separated rows ---
+    weekGroup: { paddingVertical: pageSpacing.cardGap / 2, overflow: 'hidden' },
+    rowSep: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: p.border,
+      marginHorizontal: pageSpacing.rowPadX,
+    },
+    dayRow: {
+      paddingHorizontal: pageSpacing.rowPadX,
+      paddingVertical: pageSpacing.rowPadY,
       gap: spacing.xs,
     },
-    dayCardToday: { borderColor: p.accent, borderWidth: 1 },
+    dayRowToday: { backgroundColor: p.accentSoft },
     dayHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     dayName: { color: p.text, fontSize: fontSize.body, fontWeight: '700' },
     dayEmpty: { color: p.muted, fontSize: fontSize.small },
+    entries: { gap: spacing.sm + 2 },
     entry: { gap: 1, paddingLeft: spacing.sm },
     entryRace: { borderLeftWidth: 2 },
     entryHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     entryName: { color: p.text, fontSize: fontSize.small + 1, fontWeight: '600', flexShrink: 1 },
     entryMeta: { color: p.muted, fontSize: fontSize.small, fontVariant: ['tabular-nums'] },
     entryActual: { color: p.accentText, fontSize: fontSize.small, fontVariant: ['tabular-nums'] },
+    // --- month view (same padding system) ---
     monthCard: {
       gap: spacing.sm,
-      padding: spacing.md,
+      padding: pageSpacing.cardPad,
       alignSelf: 'center',
       width: '100%',
       maxWidth: 560,
@@ -638,14 +676,15 @@ const styles = (p: Palette) =>
       flex: 1,
       aspectRatio: 1,
       borderRadius: radius.sm,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 1,
       borderColor: 'transparent',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 3,
     },
-    monthCellToday: { borderWidth: 1, borderColor: p.accent },
-    monthCellOut: { opacity: 0.5 },
+    monthCellToday: { borderColor: p.borderStrong },
+    monthCellSelected: { borderColor: p.accent, backgroundColor: p.accentSoft },
+    monthCellOut: { opacity: 0.45 },
     monthDayNum: { color: p.text, fontSize: fontSize.small, fontVariant: ['tabular-nums'] },
     dots: { flexDirection: 'row', gap: 3, minHeight: 7, alignItems: 'center' },
     dotPlan: { width: 6, height: 6, borderRadius: 3, borderWidth: 1.5 },
@@ -653,4 +692,8 @@ const styles = (p: Palette) =>
     dotDone: { width: 6, height: 6, borderRadius: 3, borderWidth: 1.5 },
     legendRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
     legendText: { color: p.muted, fontSize: fontSize.tiny },
+    dayPanel: { gap: spacing.sm, marginTop: spacing.xs },
+    panelHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    panelTitle: { color: p.text, fontSize: fontSize.body, fontWeight: '700' },
+    panelOpenBtn: { width: 28, height: 28, borderRadius: radius.sm + 1 },
   });

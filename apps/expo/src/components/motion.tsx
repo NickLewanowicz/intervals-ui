@@ -29,8 +29,10 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function PressableScale({
   onPress,
+  onLongPress,
   onPressIn,
   onPressOut,
+  hitSlop,
   style,
   disabled,
   scaleTo = motion.pressScale,
@@ -38,8 +40,11 @@ export function PressableScale({
   ...accessibility
 }: {
   onPress?: () => void;
+  onLongPress?: () => void;
   onPressIn?: () => void;
   onPressOut?: () => void;
+  /** Extends the touch target without growing the visual (compact chrome). */
+  hitSlop?: number;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
   scaleTo?: number;
@@ -60,7 +65,9 @@ export function PressableScale({
       accessibilityLabel={accessibility.accessibilityLabel}
       accessibilityHint={accessibility.accessibilityHint}
       disabled={disabled}
+      hitSlop={hitSlop}
       onPress={onPress}
+      onLongPress={onLongPress}
       onPressIn={() => {
         onPressIn?.();
         springTo(disabled ? 1 : scaleTo);

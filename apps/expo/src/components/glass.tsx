@@ -23,20 +23,25 @@ const WEB_BACKDROP = {
 export function GlassSurface({
   children,
   style,
+  testID,
 }: {
   children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  testID?: string;
 }) {
   const { colors, isDark } = useTheme();
   if (Platform.OS === 'web') {
     return (
-      <View style={[{ backgroundColor: colors.glass }, WEB_BACKDROP, style]}>{children}</View>
+      <View testID={testID} style={[{ backgroundColor: colors.glass }, WEB_BACKDROP, style]}>
+        {children}
+      </View>
     );
   }
   return (
     <BlurView
       intensity={isDark ? 45 : 65}
       tint={isDark ? 'dark' : 'light'}
+      testID={testID}
       style={[{ backgroundColor: colors.glass }, style]}
     >
       {children}
@@ -48,13 +53,18 @@ export function GlassSurface({
 export function GlassCard({
   children,
   style,
+  testID,
 }: {
   children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  testID?: string;
 }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }, style]}>
+    <View
+      testID={testID}
+      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }, style]}
+    >
       {children}
     </View>
   );
@@ -70,11 +80,13 @@ export function GlassBar({
   style,
   edge = 'bottom',
   floating = false,
+  testID,
 }: {
   children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   edge?: 'top' | 'bottom' | 'none';
   floating?: boolean;
+  testID?: string;
 }) {
   const { colors } = useTheme();
   const hairline =
@@ -85,6 +97,7 @@ export function GlassBar({
         : null;
   return (
     <GlassSurface
+      testID={testID}
       style={[
         hairline,
         floating

@@ -1,12 +1,23 @@
 /**
- * Coach chat. Single rolling session per visit: created on the first message,
- * reset by "New chat". Deltas stream in via SSE; while the first tokens are
- * in flight the coach "breathes" (typing dots); failures render a retryable
- * error row (FIX-9) — never a "(no reply)" bubble. Input dock is glass; the
- * educational footer (FIX-10) sits above it.
+ * Coach chat (round-10): multi-session via /coach/sessions (the history icon
+ * in the header — "New chat" now creates a FRESH session while previous chats
+ * stay in the list), a stop button that persists the partial reply, markdown
+ * v2 (headers / pipe tables / numbered lists / inline code / dividers),
+ * inline proposal cards under the turns that produced them, suggested-reply
+ * chips, and copy-on-long-press (hover action on web).
+ *
+ * Transports (ADR-0006): local key → direct client→OpenRouter, else the
+ * Worker; both bump the session's last_message_at, both report the session id
+ * the moment it exists (worker `start` event / direct create) so a mid-stream
+ * stop still lands the transcript in the right session.
+ *
+ * DEV ONLY: demo sessions (src/dev/mock-chat) render from local state —
+ * nothing is written to PocketBase and no model is called.
  */
 import { DEFAULT_MODEL_ID, resolveModel } from '@intervals/core';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -22,26 +33,53 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassBar } from '@/components/glass';
 import { PressableScale, TypingDots } from '@/components/motion';
-import { Button, Icon, IconButton } from '@/components/ui';
+import { Badge, Button, Icon, IconButton } from '@/components/ui';
 import { streamChat } from '@/lib/api';
+import { attachProposals } from '@/lib/chat-sessions';
+import { takePendingSelection } from '@/lib/chat-nav';
 import { useAuth } from '@/lib/auth';
 import { getLocalOrKey } from '@/lib/keystore';
 import { streamChatDirect, type DirectChatDone, type DirectChatError } from '@/lib/local-chat';
-import { parseCoachMarkdown } from '@/lib/markdown';
-import { useChatMessages, useInvalidateMirrors, usePendingProposals } from '@/lib/queries';
-import type { Proposal } from '@/lib/records';
+import { parseCoachMarkdown, type InlineSeg, type MdBlock, type MdTable } from '@/lib/markdown';
+import {
+  useChatMessages,
+  useInvalidateChatData,
+  useInvalidateMirrors,
+  usePendingProposals,
+  useSessionProposals,
+} from '@/lib/queries';
+import { proposalTitle } from '@/lib/proposal-diff';
+import type { Proposal, ProposalKind } from '@/lib/records';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 import ProposalModal from '@/components/ProposalModal';
 
 const COACH_AVATAR = require('@/assets/coach-avatar.png');
 
+const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
+
+/** Static suggested replies (vercel suggested-actions pattern — zero tokens). */
+const SUGGESTIONS = [
+  'What should I adjust this week?',
+  'Build my plan for next week',
+  'How’s my fueling?',
+] as const;
+
+const PROPOSAL_ICON: Record<ProposalKind, React.ComponentProps<typeof Icon>['name']> = {
+  create_event: 'add-circle-outline',
+  update_event: 'create-outline',
+  delete_event: 'trash-outline',
+};
+
+// ---------------------------------------------------------------------------
+// Markdown v2 rendering (parse in src/lib/markdown.ts — pure, unit tested)
+// ---------------------------------------------------------------------------
+
 /**
- * Coach replies arrive as light markdown (**bold**, "- " bullets). Round-5
- * persona finding #5: render them instead of shipping literal asterisks.
- * Minimal transform (src/lib/markdown.ts) — no markdown library.
+ * Renders the parsed blocks; memoized per message so streaming re-parses only
+ * the growing bubble. The caret rides the last text-bearing block.
  */
-function MarkdownBubble({
+const MarkdownBubble = React.memo(function MarkdownBubble({
   text,
   style,
   streaming,
@@ -51,43 +89,112 @@ function MarkdownBubble({
   streaming?: boolean;
 }) {
   const { colors } = useTheme();
-  const s = styles(colors);
-  const lines = useMemo(() => parseCoachMarkdown(text), [text]);
-  // the streaming caret rides on the last rendered segment
-  let caretLine = -1;
-  lines.forEach((l, i) => {
-    if (l.segs.length > 0) caretLine = i;
-  });
+  const s = mdStyles(colors);
+  const blocks = useMemo(() => parseCoachMarkdown(text), [text]);
+  const caretIdx = useMemo(() => {
+    let idx = -1;
+    blocks.forEach((b, i) => {
+      if (b.kind !== 'table' && b.kind !== 'gap' && b.segs.length > 0) idx = i;
+    });
+    return idx;
+  }, [blocks]);
+
   return (
     <View>
-      {lines.map((line, i) => {
-        if (line.kind === 'gap') return <View key={i} style={s.mdGap} />;
-        const caret = streaming && i === caretLine ? '▌' : '';
-        if (line.kind === 'bullet') {
+      {blocks.map((b: MdBlock, i: number) => {
+        if (b.kind === 'gap') return <View key={i} style={s.mdGap} />;
+        if (b.kind === 'hr') return <View key={i} style={s.mdHr} />;
+        if (b.kind === 'table') return <MdTableView key={i} table={b} bodyStyle={style} />;
+        const caret = streaming && i === caretIdx ? '▌' : '';
+        if (b.kind === 'header') {
+          return (
+            <Text key={i} style={b.level === 3 ? s.mdH3 : s.mdH2}>
+              {renderSegs(b.segs, s, caret)}
+            </Text>
+          );
+        }
+        if (b.kind === 'bullet' || b.kind === 'number') {
           return (
             <View key={i} style={s.mdBulletRow}>
-              <Text style={[style, s.mdBulletGlyph]}>•</Text>
-              <Text style={[style, s.mdBulletText]}>
-                {line.segs.map((seg, j) => (
-                  <Text key={j} style={seg.bold ? s.mdBold : undefined}>
-                    {j === line.segs.length - 1 ? `${seg.text}${caret}` : seg.text}
-                  </Text>
-                ))}
-              </Text>
+              <Text style={[style, s.mdBulletGlyph]}>{b.kind === 'number' ? (b.marker ?? '•') : '•'}</Text>
+              <Text style={[style, s.mdBulletText]}>{renderSegs(b.segs, s, caret)}</Text>
             </View>
           );
         }
         return (
           <Text key={i} style={style}>
-            {line.segs.map((seg, j) => (
-              <Text key={j} style={seg.bold ? s.mdBold : undefined}>
-                {j === line.segs.length - 1 ? `${seg.text}${caret}` : seg.text}
-              </Text>
-            ))}
+            {renderSegs(b.segs, s, caret)}
           </Text>
         );
       })}
     </View>
+  );
+});
+
+/** Inline segments — bold + `code` chips; the caret rides the last segment. */
+function renderSegs(segs: InlineSeg[], s: MdS, caret?: string): React.ReactNode[] {
+  return segs.map((seg, j) => (
+    <Text key={j} style={[seg.bold ? s.mdBold : null, seg.code ? s.mdCode : null]}>
+      {j === segs.length - 1 ? `${seg.text}${caret ?? ''}` : seg.text}
+    </Text>
+  ));
+}
+
+/** Pipe table: emphasized header row, hairline-divided rows, horizontally
+ *  scrollable when wide (pacing schedules on phone widths). */
+function MdTableView({ table, bodyStyle }: { table: MdTable; bodyStyle: TextStyle }) {
+  const { colors } = useTheme();
+  const s = mdStyles(colors);
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.mdTableScroll}>
+      <View style={s.mdTable}>
+        <View style={[s.mdTableRow, s.mdTableHead]}>
+          {table.header.map((cell, i) => (
+            <Text key={i} style={[bodyStyle, s.mdTableCell, s.mdTableHeadCell]}>
+              {renderSegs(cell, s)}
+            </Text>
+          ))}
+        </View>
+        {table.rows.map((row, r) => (
+          <View key={r} style={s.mdTableRow}>
+            {row.map((cell, c) => (
+              <Text key={c} style={[bodyStyle, s.mdTableCell]}>
+                {renderSegs(cell, s)}
+              </Text>
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+type MdS = ReturnType<typeof mdStyles>;
+
+// ---------------------------------------------------------------------------
+// Inline proposal cards (LobeChat plugin-card pattern)
+// ---------------------------------------------------------------------------
+
+function ProposalCard({ proposal, onPress }: { proposal: Proposal; onPress: () => void }) {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const status = proposal.status ?? 'pending';
+  const tone = status === 'applied' ? 'success' : status === 'failed' ? 'danger' : status === 'pending' ? 'accent' : 'muted';
+  return (
+    <PressableScale
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Proposal: ${proposalTitle(proposal.kind, proposal.payload.name)} — ${status}`}
+      style={s.card}
+    >
+      <View style={s.cardIcon}>
+        <Icon name={PROPOSAL_ICON[proposal.kind]} size={15} color={colors.accentText} />
+      </View>
+      <Text style={s.cardTitle} numberOfLines={1}>
+        {proposalTitle(proposal.kind, proposal.payload.name)}
+      </Text>
+      <Badge label={status} tone={tone} />
+    </PressableScale>
   );
 }
 
@@ -96,10 +203,24 @@ interface Bubble {
   role: 'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  created?: string;
+  /** turn produced proposals but no text — keeps the card row anchored */
+  toolOnly?: boolean;
 }
 
 /** Where chat turns run (ADR-0006): local key → on-device, else via server. */
 type Transport = 'device' | 'server';
+
+/** DEV ONLY: a demo session loaded into local state (never persisted). */
+interface DemoState {
+  id: string;
+  title: string;
+  messages: Bubble[];
+  proposals: Proposal[];
+}
+
+const DEMO_REPLY =
+  'Demo mode — this chat lives **only on this device**; the coach isn’t behind it. Every render surface still works here: `paced` tokens, tables, cards and chips.';
 
 /**
  * Muted transport chip for the header. Pressing re-checks the local key —
@@ -136,17 +257,26 @@ export default function CoachScreen() {
   const { user } = useAuth();
   const pending = usePendingProposals();
   const invalidateMirrors = useInvalidateMirrors();
+  const invalidateChatData = useInvalidateChatData();
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Bubble[]>([]);
+  const [liveProposals, setLiveProposals] = useState<Proposal[]>([]);
+  const [demo, setDemo] = useState<DemoState | null>(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<Proposal | null>(null);
   const [transport, setTransport] = useState<Transport>('server');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const lastSent = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const history = useChatMessages(sessionId);
+  const history = useChatMessages(demo ? null : sessionId);
+  const sessionProposals = useSessionProposals(demo ? null : sessionId);
   const historyLoadedFor = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -154,13 +284,27 @@ export default function CoachScreen() {
   // short name only — the full roster label truncates at 375px
   const modelName = model.label.split(' (')[0] ?? model.label;
 
-  // hydrate bubbles from the session history (when a session exists)
+  // hydrate bubbles from the session history (when a session exists). A live
+  // turn owns the transcript: while sending, adopting the new session id must
+  // NOT clobber the in-flight bubbles (it just marks the guard).
   useEffect(() => {
     if (!sessionId || historyLoadedFor.current === sessionId) return;
+    if (sending) {
+      historyLoadedFor.current = sessionId;
+      return;
+    }
     if (history.isLoading || !history.data) return;
     historyLoadedFor.current = sessionId;
-    setMessages(history.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
-  }, [sessionId, history.isLoading, history.data]);
+    setMessages(
+      history.data.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        created: m.created,
+        toolOnly: m.toolOnly,
+      })),
+    );
+  }, [sessionId, sending, history.isLoading, history.data]);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd?.({ animated: false });
@@ -177,9 +321,80 @@ export default function CoachScreen() {
     };
   }, []);
 
-  const recheckTransport = () => {
-    void getLocalOrKey().then((k) => setTransport(k ? 'device' : 'server'));
-  };
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    };
+  }, []);
+
+  // web copy affordance: RNW fires the bubble's hover-out when the pointer
+  // moves onto the child button, so the hide is DELAYED and cancelled by the
+  // button's own hover-in (classic menu pattern) — otherwise it flaps away
+  const showCopy = useCallback((id: string) => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+    setHoveredId(id);
+  }, []);
+  const scheduleCopyHide = useCallback(() => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHoveredId(null), 250);
+  }, []);
+
+  const newChat = useCallback(() => {
+    abortRef.current?.abort();
+    setSessionId(null);
+    historyLoadedFor.current = null;
+    setMessages([]);
+    setLiveProposals([]);
+    setDemo(null);
+    setError(null);
+  }, []);
+
+  const switchSession = useCallback((id: string) => {
+    if (id === sessionId && !demo) return;
+    abortRef.current?.abort();
+    setDemo(null);
+    setSessionId(id);
+    historyLoadedFor.current = null;
+    setMessages([]);
+    setLiveProposals([]);
+    setError(null);
+  }, [sessionId, demo]);
+
+  const loadDemoSession = useCallback(async (demoId: string) => {
+    // dynamic import: the mock data ships as an async chunk the production
+    // entry never fetches (demo sessions are only reachable behind the dev
+    // gate in the sessions screen)
+    const mod = await import('@/dev/mock-chat');
+    const ms = mod.loadDemoSessions().byId.get(demoId);
+    if (!ms) return;
+    abortRef.current?.abort();
+    historyLoadedFor.current = null;
+    setSessionId(null);
+    setDemo({
+      id: ms.id,
+      title: ms.title,
+      messages: ms.messages.map((m, i) => ({ id: `${ms.id}-m${i}`, role: m.role, content: m.content })),
+      proposals: ms.proposals as Proposal[],
+    });
+    setMessages(ms.messages.map((m, i) => ({ id: `${ms.id}-m${i}`, role: m.role, content: m.content })));
+    setLiveProposals(ms.proposals as Proposal[]);
+    setError(null);
+  }, []);
+
+  // sessions-list selection rides chat-nav (router.back() can't carry params)
+  useFocusEffect(
+    useCallback(() => {
+      const sel = takePendingSelection();
+      if (!sel) return;
+      if ('demoSessionId' in sel) void loadDemoSession(sel.demoSessionId);
+      else if (sel.sessionId === '') newChat();
+      else switchSession(sel.sessionId);
+    }, [loadDemoSession, newChat, switchSession]),
+  );
 
   const send = async (text: string) => {
     if (!text || sending) return;
@@ -187,6 +402,27 @@ export default function CoachScreen() {
     setInput('');
     setError(null);
     setSending(true);
+
+    // demo sessions never leave local state
+    if (demo) {
+      const assistantId = bubbleId();
+      setMessages((prev) => [
+        ...prev,
+        { id: bubbleId(), role: 'user', content: text },
+        { id: assistantId, role: 'assistant', content: '', streaming: true },
+      ]);
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: DEMO_REPLY, streaming: false } : m)),
+        );
+        setSending(false);
+      }, 900);
+      return;
+    }
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     const userBubble: Bubble = { id: bubbleId(), role: 'user', content: text };
     const assistantId = bubbleId();
     setMessages((prev) => [
@@ -204,13 +440,20 @@ export default function CoachScreen() {
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + t } : m)),
       );
+    let turnHadProposal = false;
     const onProposal = (p: Proposal) => {
+      turnHadProposal = true;
       setModal(p);
+      setLiveProposals((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, p]));
       void pending.refetch();
+    };
+    const handleSession = (id: string) => {
+      historyLoadedFor.current = id; // the live turn owns the transcript
+      setSessionId(id);
     };
     const handleDone = (d: { session_id?: string; proposal_errors?: Array<{ error: string }> } & Partial<DirectChatDone>) => {
       if (d.usedFallback) setTransport('server');
-      if (d.session_id) setSessionId(d.session_id);
+      if (d.session_id) handleSession(d.session_id);
       if (d.proposal_errors?.length) {
         setError(`Coach proposed an invalid change: ${d.proposal_errors[0]!.error}`);
       }
@@ -226,8 +469,10 @@ export default function CoachScreen() {
           sessionId: sessionId ?? undefined,
           message: text,
           model: user?.preferredModel || DEFAULT_MODEL_ID,
+          signal: ac.signal,
           onDelta,
           onProposal,
+          onSession: handleSession,
           onDone: handleDone as (d: DirectChatDone) => void,
           onError: handleError,
         });
@@ -236,8 +481,10 @@ export default function CoachScreen() {
           sessionId: sessionId ?? undefined,
           message: text,
           model: user?.preferredModel || DEFAULT_MODEL_ID,
+          signal: ac.signal,
           onDelta,
           onProposal,
+          onSession: handleSession,
           onDone: handleDone,
           onError: handleError as (msg: string) => void,
         });
@@ -246,31 +493,80 @@ export default function CoachScreen() {
       setError(e instanceof Error ? e.message : 'Chat failed');
     } finally {
       setSending(false);
-      // FIX-9: drop the empty assistant shell — the error row replaces it
-      setMessages((prev) => prev.filter((m) => !(m.id === assistantId && !m.content)));
+      abortRef.current = null;
+      // stop drops the partial's streaming caret; FIX-9: drop empty shells —
+      // EXCEPT a tool-call-only turn, which keeps a muted anchor bubble so the
+      // proposal cards have a transcript home
+      setMessages((prev) =>
+        prev
+          .map((m) => (m.id === assistantId && m.streaming ? { ...m, streaming: false } : m))
+          .map((m) =>
+            m.id === assistantId && !m.content && turnHadProposal ? { ...m, toolOnly: true } : m,
+          )
+          .filter((m) => !(m.id === assistantId && !m.content && !m.toolOnly)),
+      );
+      invalidateChatData(); // fresh statuses for the inline cards + list stamps
       void pending.refetch();
     }
+  };
+
+  const stop = () => {
+    // the transport persists the partial client-side (direct) or server-side
+    // (worker `request.signal`); the finally block above settles the UI
+    abortRef.current?.abort();
   };
 
   const retry = () => {
     if (lastSent.current) void send(lastSent.current);
   };
 
-  const newChat = () => {
-    setSessionId(null);
-    historyLoadedFor.current = null;
-    setMessages([]);
-    setError(null);
+  const copyMessage = async (m: Bubble) => {
+    try {
+      await Clipboard.setStringAsync(m.content);
+      setCopiedId(m.id);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopiedId(null), 1400);
+    } catch {
+      // clipboard unavailable — silent (dev web http has no clipboard perms)
+    }
   };
 
   const onProposalResolved = (outcome: 'applied' | 'dismissed' | 'closed') => {
     setModal(null);
     if (outcome !== 'closed') invalidateMirrors();
+    invalidateChatData(); // card chips live-update after a resolution
     void pending.refetch();
   };
 
   const pendingItems = pending.data ?? [];
   const pendingError = pending.isError ? (pending.error as Error)?.message : null;
+
+  // transcript cards: query proposals (fresh statuses) + in-flight ones, deduped
+  const allProps = useMemo(() => {
+    const fromQuery = sessionProposals.data ?? [];
+    const ids = new Set(fromQuery.map((p) => p.id));
+    return [...fromQuery, ...liveProposals.filter((p) => !ids.has(p.id))];
+  }, [sessionProposals.data, liveProposals]);
+  const propById = useMemo(() => new Map(allProps.map((p) => [p.id, p])), [allProps]);
+  const cards = useMemo(() => attachProposals(messages, allProps), [messages, allProps]);
+  // safety net: a proposal whose turn bubble was lost (rare attribution race)
+  // still renders — never let a proposal vanish from the transcript
+  const orphanCards = useMemo(() => {
+    if (messages.length === 0) return [];
+    const attached = new Set(Object.values(cards).flat());
+    return allProps.filter((p) => !attached.has(p.id));
+  }, [messages, cards, allProps]);
+
+  const lastMsg = messages[messages.length - 1];
+  const showChips =
+    !sending &&
+    !error &&
+    (messages.length === 0 ||
+      (lastMsg?.role === 'assistant' && !lastMsg.streaming));
+
+  const recheckTransport = () => {
+    void getLocalOrKey().then((k) => setTransport(k ? 'device' : 'server'));
+  };
 
   return (
     <KeyboardAvoidingView style={s.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -279,15 +575,20 @@ export default function CoachScreen() {
         <View style={s.headerInner}>
           <Image source={COACH_AVATAR} style={s.avatar} accessibilityIgnoresInvertColors />
           <View style={s.headerTitle}>
-            <Text style={s.title}>Coach</Text>
+            <Text style={s.title} numberOfLines={1}>
+              {demo ? 'Demo chat' : 'Coach'}
+            </Text>
             <View style={s.headerMeta}>
               <Text style={s.model} numberOfLines={1}>
-                {modelName}
+                {demo ? demo.title : modelName}
               </Text>
               <TransportChip transport={transport} onRecheck={recheckTransport} />
             </View>
           </View>
-          <Button title="New chat" variant="ghost" icon="add" onPress={newChat} />
+          <View style={s.headerActions}>
+            <IconButton icon="time-outline" label="Chat history" onPress={() => router.push('/coach/sessions')} />
+            <IconButton icon="add" label="New chat" onPress={newChat} />
+          </View>
         </View>
       </GlassBar>
       {pendingError ? (
@@ -320,23 +621,73 @@ export default function CoachScreen() {
             </Text>
           </View>
         ) : (
-          messages.map((m) => (
-            <View
-              key={m.id}
-              style={[s.bubble, m.role === 'user' ? s.bubbleUser : s.bubbleAssistant]}
-            >
-              {m.streaming && !m.content ? (
-                <TypingDots color={colors.muted} />
-              ) : m.role === 'assistant' ? (
-                <MarkdownBubble text={m.content} style={s.bubbleText} streaming={m.streaming} />
-              ) : (
-                // FIX-2: onAccent (near-white) on the accent fill passes AA in
-                // BOTH themes — p.text was 3.1:1 in light. Assistant untouched.
-                <Text style={s.bubbleTextUser}>{m.content}</Text>
-              )}
-            </View>
-          ))
+          messages.map((m) => {
+            const turnCards = (cards[m.id] ?? [])
+              .map((pid) => propById.get(pid))
+              .filter((p): p is Proposal => Boolean(p));
+            return (
+              <View key={m.id}>
+                {m.role === 'assistant' ? (
+                  <Pressable
+                    onLongPress={() => void copyMessage(m)}
+                    onHoverIn={() => showCopy(m.id)}
+                    onHoverOut={scheduleCopyHide}
+                    accessibilityLabel="Assistant reply — long-press to copy"
+                    style={[s.bubble, s.bubbleAssistant]}
+                  >
+                    {m.streaming && !m.content ? (
+                      <TypingDots color={colors.muted} />
+                    ) : m.toolOnly && !m.content ? (
+                      <View style={s.toolOnlyRow}>
+                        <Icon name="file-tray-full" size={13} color={colors.muted} />
+                        <Text style={s.toolOnlyText}>Proposed a calendar change — review the card below.</Text>
+                      </View>
+                    ) : (
+                      <MarkdownBubble text={m.content} style={s.bubbleText} streaming={m.streaming} />
+                    )}
+                    {hoveredId === m.id && Platform.OS === 'web' ? (
+                      <View style={s.copyWrap}>
+                        <Pressable
+                          onHoverIn={() => showCopy(m.id)}
+                          onHoverOut={scheduleCopyHide}
+                          onPress={() => void copyMessage(m)}
+                          accessibilityRole="button"
+                          accessibilityLabel="Copy message"
+                          style={s.copyBtn}
+                        >
+                          <Icon
+                            name={copiedId === m.id ? 'checkmark' : 'copy-outline'}
+                            size={14}
+                            color={copiedId === m.id ? colors.success : colors.mutedStrong}
+                          />
+                        </Pressable>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                ) : (
+                  <View style={[s.bubble, s.bubbleUser]}>
+                    <Text style={s.bubbleTextUser}>{m.content}</Text>
+                  </View>
+                )}
+                {copiedId === m.id ? <Text style={s.copiedNote}>Copied</Text> : null}
+                {turnCards.length > 0 ? (
+                  <View style={s.cardRow}>
+                    {turnCards.map((p) => (
+                      <ProposalCard key={p.id} proposal={p} onPress={() => setModal(p)} />
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })
         )}
+        {orphanCards.length > 0 ? (
+          <View style={s.cardRow}>
+            {orphanCards.map((p) => (
+              <ProposalCard key={p.id} proposal={p} onPress={() => setModal(p)} />
+            ))}
+          </View>
+        ) : null}
         {error ? (
           <View style={s.errorRow}>
             <Text style={s.errorText} numberOfLines={2}>
@@ -349,6 +700,28 @@ export default function CoachScreen() {
 
       {/* FIX-10 footer + glass input dock */}
       <View style={{ paddingBottom: insets.bottom + layout.tabBarBottom + layout.tabBarHeight }}>
+        {showChips ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.chipsRow}
+            style={s.chipsScroll}
+          >
+            {SUGGESTIONS.map((chip) => (
+              <PressableScale
+                key={chip}
+                onPress={() => void send(chip)}
+                accessibilityRole="button"
+                accessibilityLabel={`Suggested reply: ${chip}`}
+                style={s.chip}
+              >
+                <Text style={s.chipText} numberOfLines={1}>
+                  {chip}
+                </Text>
+              </PressableScale>
+            ))}
+          </ScrollView>
+        ) : null}
         <Text style={s.footer}>Educational — not medical advice.</Text>
         <GlassBar edge="none" floating style={s.inputDock}>
           <TextInput
@@ -361,13 +734,17 @@ export default function CoachScreen() {
             returnKeyType="send"
             onSubmitEditing={() => void send(input.trim())}
           />
-          <IconButton
-            icon="arrow-up"
-            label="Send message"
-            tone="accent"
-            onPress={() => void send(input.trim())}
-            disabled={sending || !input.trim()}
-          />
+          {sending ? (
+            <IconButton icon="stop" label="Stop generating" tone="accent" onPress={stop} />
+          ) : (
+            <IconButton
+              icon="arrow-up"
+              label="Send message"
+              tone="accent"
+              onPress={() => void send(input.trim())}
+              disabled={!input.trim()}
+            />
+          )}
         </GlassBar>
       </View>
 
@@ -375,6 +752,60 @@ export default function CoachScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+// ---------------------------------------------------------------------------
+// styles
+// ---------------------------------------------------------------------------
+
+const mdStyles = (p: Palette) =>
+  StyleSheet.create({
+    mdGap: { height: spacing.xs },
+    mdHr: { height: 1, backgroundColor: p.border, marginVertical: spacing.xs + 2 },
+    mdH2: {
+      color: p.mutedStrong,
+      fontSize: fontSize.small,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.7,
+      marginTop: spacing.xs,
+    },
+    mdH3: {
+      color: p.muted,
+      fontSize: fontSize.small,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      marginTop: 2,
+    },
+    mdBulletRow: { flexDirection: 'row', gap: spacing.sm },
+    mdBulletGlyph: { color: p.muted, fontVariant: ['tabular-nums'] },
+    mdBulletText: { flexShrink: 1, flexGrow: 1 },
+    mdBold: { fontWeight: '700' },
+    mdCode: {
+      fontFamily: MONO,
+      fontSize: fontSize.small,
+      color: p.mutedStrong,
+      backgroundColor: p.bg,
+      borderRadius: 4,
+      paddingHorizontal: 4,
+    },
+    mdTableScroll: { alignSelf: 'flex-start', maxWidth: '100%', marginVertical: 2 },
+    mdTable: {
+      borderRadius: radius.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.border,
+      overflow: 'hidden',
+    },
+    mdTableRow: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: p.border,
+    },
+    mdTableHead: { backgroundColor: p.accentSoft, borderBottomColor: p.borderStrong },
+    mdTableCell: { flexShrink: 1, minWidth: 76, paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2 },
+    mdTableHeadCell: { fontWeight: '700' },
+  });
 
 const styles = (p: Palette) =>
   StyleSheet.create({
@@ -389,6 +820,7 @@ const styles = (p: Palette) =>
       gap: spacing.md,
     },
     headerTitle: { flex: 1, justifyContent: 'center' },
+    headerActions: { flexDirection: 'row', gap: spacing.xs },
     headerMeta: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -449,27 +881,79 @@ const styles = (p: Palette) =>
     emptyTitle: { color: p.text, fontSize: fontSize.h, fontWeight: '600' },
     emptyBody: { color: p.muted, fontSize: fontSize.small, textAlign: 'center', lineHeight: 19 },
     bubble: {
-      maxWidth: '84%',
       borderRadius: radius.lg,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm + 2,
     },
-    bubbleUser: { alignSelf: 'flex-end', backgroundColor: p.accent },
+    // assistant replies go full-width so tables/bullets stop wrapping early
+    // (research §2); user bubbles stay right-aligned and bubbled
+    bubbleUser: { maxWidth: '84%', alignSelf: 'flex-end', backgroundColor: p.accent },
     bubbleAssistant: {
-      alignSelf: 'flex-start',
+      alignSelf: 'stretch',
       backgroundColor: p.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: p.border,
     },
     bubbleText: { color: p.text, fontSize: fontSize.body, lineHeight: 21 },
+    toolOnlyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 2 },
+    toolOnlyText: { color: p.muted, fontSize: fontSize.small, flexShrink: 1 },
     // round-8 FIX-2: user bubbles sit on the accent fill — ink must be the
     // inverted onAccent (5.5:1 light / 5.1:1 dark), not p.text (3.1:1 light).
     bubbleTextUser: { color: p.onAccent, fontSize: fontSize.body, lineHeight: 21 },
-    mdGap: { height: spacing.xs },
-    mdBulletRow: { flexDirection: 'row', gap: spacing.sm },
-    mdBulletGlyph: { color: p.muted },
-    mdBulletText: { flexShrink: 1 },
-    mdBold: { fontWeight: '700' },
+    copyWrap: { position: 'absolute', top: 2, right: 2 },
+    copyBtn: {
+      width: 30,
+      height: 30,
+      borderRadius: radius.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: p.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.border,
+    },
+    copiedNote: { color: p.muted, fontSize: fontSize.tiny, marginTop: 2 },
+    cardRow: { gap: spacing.xs },
+    card: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: p.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.border,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.sm + 2,
+      paddingVertical: spacing.xs + 2,
+      minHeight: layout.minTouch - 4,
+    },
+    cardIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: radius.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: p.accentSoft,
+    },
+    cardTitle: { color: p.text, fontSize: fontSize.small, fontWeight: '600', flexShrink: 1, flexGrow: 1 },
+    chipsScroll: { flexGrow: 0 },
+    chipsRow: {
+      maxWidth: layout.maxW,
+      width: '100%',
+      alignSelf: 'center',
+      paddingHorizontal: spacing.lg,
+      gap: spacing.sm,
+      paddingBottom: spacing.xs,
+    },
+    chip: {
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.border,
+      backgroundColor: p.card,
+      paddingHorizontal: spacing.md,
+      minHeight: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    chipText: { color: p.text, fontSize: fontSize.small },
     errorRow: {
       alignSelf: 'stretch',
       flexDirection: 'row',

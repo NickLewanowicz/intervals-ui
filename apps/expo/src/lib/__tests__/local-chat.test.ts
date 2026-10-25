@@ -28,7 +28,7 @@ const h = vi.hoisted(() => {
     };
 
   const state = { record: {} as Record<string, unknown>, orKey: null as string | null };
-  const collections: Record<string, { getList: Fn; create: Fn }> = {};
+  const collections: Record<string, { getList: Fn; create: Fn; update?: Fn }> = {};
   const pb = {
     authStore: {
       isValid: true,
@@ -62,6 +62,7 @@ vi.mock('@/lib/keystore', () => ({
 import { OPENROUTER_CHAT_URL } from '@intervals/core';
 import {
   accumulateToolCalls,
+  completeToolCalls,
   streamChatDirect,
   type DirectChatDone,
   type DirectChatError,
@@ -89,6 +90,29 @@ function sseResponse(text: string, ok = true, status = 200): Response {
           if (sent) return { done: true, value: undefined };
           sent = true;
           return { done: false, value: enc.encode(text) };
+        },
+      }),
+    },
+    text: async () => text,
+  } as unknown as Response;
+}
+
+/** A stream that delivers one chunk, then rejects with AbortError (stop pressed). */
+function sseAbortedResponse(text: string, onAbort: () => void): Response {
+  const enc = new TextEncoder();
+  let reads = 0;
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: async () => {
+          reads += 1;
+          if (reads === 1) return { done: false, value: enc.encode(text) };
+          onAbort();
+          const e = new Error('The operation was aborted.');
+          e.name = 'AbortError';
+          throw e;
         },
       }),
     },
@@ -134,6 +158,28 @@ describe('accumulateToolCalls', () => {
   });
 });
 
+describe('completeToolCalls (stop-button partial persist)', () => {
+  const complete = { id: 'c1', name: 'propose_event', args: '{"name":"Easy"}' };
+
+  it('keeps calls with id, name and parseable args', () => {
+    expect(completeToolCalls([complete, { id: 'c2', name: 'delete_event', args: '{"id":9}' }])).toEqual([
+      complete,
+      { id: 'c2', name: 'delete_event', args: '{"id":9}' },
+    ]);
+  });
+
+  it('drops calls cut mid-JSON, without id/name, or with empty args', () => {
+    expect(
+      completeToolCalls([
+        complete,
+        { id: 'c-cut', name: 'propose_event', args: '{"start_date_local":"2026-10-3' },
+        { id: '', name: 'propose_event', args: '{}' },
+        { id: 'c3', name: '', args: '{}' },
+      ]),
+    ).toEqual([complete]);
+  });
+});
+
 describe('streamChatDirect', () => {
   beforeEach(() => {
     h.state.record = {
@@ -148,6 +194,7 @@ describe('streamChatDirect', () => {
     h.collections.chat_sessions = {
       getList: h.mkfn(async () => ({ items: [] })),
       create: h.mkfn(async () => ({ id: 'sess-direct' })),
+      update: h.mkfn(async () => ({})),
     };
     h.collections.chat_messages = {
       getList: h.mkfn(async () => ({ items: [] })),
@@ -311,5 +358,86 @@ describe('streamChatDirect', () => {
     expect(out.done?.usedFallback).toBe(false);
     expect(out.done?.proposal_errors?.[0]).toMatchObject({ tool: 'delete_event' });
     expect(h.collections.proposals.create.calls).toHaveLength(0);
+  });
+
+  it('reports the session id as soon as it is known (onSession)', async () => {
+    h.state.orKey = 'sk-or-local';
+    const seen: string[] = [];
+    fetchFn.impl = async () =>
+      sseResponse(orFrames([{ choices: [{ delta: { content: 'hey' } }] }, '[DONE]']));
+    const { out, opts } = callbacks();
+    await streamChatDirect(opts({ onSession: (id) => seen.push(id) }));
+    expect(seen).toEqual(['sess-direct']);
+    expect(out.done?.session_id).toBe('sess-direct');
+  });
+
+  it('stop mid-stream persists the partial reply and bumps activity (no done, no error)', async () => {
+    h.state.orKey = 'sk-or-local';
+    const ac = new AbortController();
+    fetchFn.impl = async () =>
+      sseAbortedResponse(
+        orFrames([{ choices: [{ delta: { content: 'Partial ans' } }] }]),
+        () => ac.abort(),
+      );
+    const { out, opts } = callbacks();
+    await streamChatDirect(opts({ signal: ac.signal }));
+    expect(out.done).toBeNull();
+    expect(out.error).toBeNull();
+
+    const rows = h.collections.chat_messages.create.calls.map((c) => c[0]);
+    expect(rows[0]).toMatchObject({ role: 'user', content: 'Add an easy run Friday' });
+    expect(rows[1]).toMatchObject({ role: 'assistant', content: 'Partial ans' });
+    expect(rows[1].tool_calls).toBeNull();
+    // sessions list sort key bumped (user message + partial persist)
+    const sessUpdates = h.collections.chat_sessions.update?.calls ?? [];
+    expect(sessUpdates.length).toBeGreaterThanOrEqual(1);
+    expect(sessUpdates[0]![0]).toBe('sess-direct');
+  });
+
+  it('stop mid-stream persists proposals only from COMPLETE tool calls', async () => {
+    h.state.orKey = 'sk-or-local';
+    const ac = new AbortController();
+    const goodArgs = JSON.stringify({
+      start_date_local: '2026-10-30T07:00',
+      name: 'Easy shakeout',
+      type: 'Run',
+      moving_time: 1200,
+    });
+    fetchFn.impl = async () =>
+      sseAbortedResponse(
+        orFrames([
+          { choices: [{ delta: { content: 'Adding it' } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c-ok', function: { name: 'propose_event', arguments: goodArgs } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 1, id: 'c-cut', function: { name: 'propose_event', arguments: '{"start_date_local":"2026-10-3' } }] } }] },
+        ]),
+        () => ac.abort(),
+      );
+    const { out, opts } = callbacks();
+    await streamChatDirect(opts({ signal: ac.signal }));
+    expect(out.done).toBeNull();
+
+    // the cut-off call is dropped from the assistant row AND from proposals
+    const assistant = h.collections.chat_messages.create.calls.map((c) => c[0]).at(-1)!;
+    expect(assistant.tool_calls).toEqual([
+      { id: 'c-ok', function: { name: 'propose_event', arguments: goodArgs } },
+    ]);
+    expect(h.collections.proposals.create.calls).toHaveLength(1);
+    expect(h.collections.proposals.create.calls[0]![0]).toMatchObject({
+      kind: 'create_event',
+      status: 'pending',
+    });
+  });
+
+  it('an abort before any content persists nothing', async () => {
+    h.state.orKey = 'sk-or-local';
+    const ac = new AbortController();
+    fetchFn.impl = async () => sseAbortedResponse('', () => ac.abort());
+    const { out, opts } = callbacks();
+    await streamChatDirect(opts({ signal: ac.signal }));
+    expect(out.done).toBeNull();
+    expect(out.error).toBeNull();
+    // the user row still persisted (it was sent), but no empty assistant shell
+    const roles = h.collections.chat_messages.create.calls.map((c) => c[0].role);
+    expect(roles).toEqual(['user']);
   });
 });

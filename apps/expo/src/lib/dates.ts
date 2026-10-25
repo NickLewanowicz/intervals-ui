@@ -145,3 +145,30 @@ export function weekRangeLabel(monday: string): string {
   const fmt = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]!.slice(0, 3)} ${Number(iso.slice(8, 10))}`;
   return `${fmt(monday)} – ${fmt(to)}`;
 }
+
+/**
+ * Compact nav-bar label: "Oct 19–25" inside one month, "Oct 26 – Nov 1" when
+ * the week crosses a month boundary. Full label stays on the stats caption.
+ */
+export function weekRangeLabelShort(monday: string): string {
+  const to = addDays(monday, 6);
+  const mon = `${MONTHS[Number(monday.slice(5, 7)) - 1]!.slice(0, 3)} ${Number(monday.slice(8, 10))}`;
+  if (monday.slice(0, 7) === to.slice(0, 7)) return `${mon}–${Number(to.slice(8, 10))}`;
+  return `${mon} – ${MONTHS[Number(to.slice(5, 7)) - 1]!.slice(0, 3)} ${Number(to.slice(8, 10))}`;
+}
+
+/** "Oct 2026" — compact month label for chrome (full label: monthGrid.label). */
+export function monthLabelShort(anchor: string): string {
+  return `${MONTHS[Number(anchor.slice(5, 7)) - 1]!.slice(0, 3)} ${anchor.slice(0, 4)}`;
+}
+
+/**
+ * The same day-of-month inside the month of `anchor`, clamped to that month's
+ * length (Jan 31 → Feb 28). Keeps a month view's selected day attached to the
+ * same spot while navigating months.
+ */
+export function clampToMonth(iso: string, anchor: string): string {
+  const max = daysInMonth(anchor);
+  const day = Math.min(Number(iso.slice(8, 10)), max);
+  return `${anchor.slice(0, 8)}${String(day).padStart(2, '0')}`;
+}

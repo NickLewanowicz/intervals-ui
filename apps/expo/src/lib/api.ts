@@ -86,6 +86,12 @@ export interface ChatStreamOptions {
   message: string;
   model?: string;
   signal?: AbortSignal;
+  /**
+   * Fires as soon as the worker reports the session id (the `start` SSE event,
+   * sent before the first delta) — the screen binds the transcript to the
+   * session immediately, so a mid-stream stop still lands in the right chat.
+   */
+  onSession?: (sessionId: string) => void;
 }
 
 export async function streamChat(opts: ChatStreamOptions & ChatStreamEvent): Promise<void> {
@@ -124,6 +130,9 @@ export async function streamChat(opts: ChatStreamOptions & ChatStreamEvent): Pro
       return; // malformed frame — skip
     }
     switch (msg.event) {
+      case 'start':
+        if (typeof data.session_id === 'string' && data.session_id) opts.onSession?.(data.session_id);
+        break;
       case 'delta':
         if (typeof data.text === 'string') opts.onDelta(data.text);
         break;

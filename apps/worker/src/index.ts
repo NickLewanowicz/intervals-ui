@@ -212,6 +212,23 @@ async function proposalAction(
 
 // ---------- chat ----------
 
+/** Bump the session's last-activity stamp (the sessions-list sort key). */
+async function bumpSessionActivity(env: Env, sessionId: string): Promise<void> {
+  await updateRecord(env, 'chat_sessions', sessionId, {
+    last_message_at: new Date().toISOString(),
+  }).catch(() => {}); // sort-key bump is cosmetic — never fail a turn over it
+}
+
+/** True when the accumulated argument JSON parses (a cut-off call's won't). */
+function isCompleteJson(args: string): boolean {
+  try {
+    JSON.parse(args || '{}');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface ChatRequestBody {
   session_id?: string;
   message: string;
@@ -231,7 +248,8 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
   if (!message) return json({ error: 'empty_message' }, 400, cors);
   if (!user.openrouter_api_key) return json({ error: 'missing_openrouter_key' }, 400, cors);
 
-  // session (create on first turn)
+  // session (create on first turn); last_message_at is the sessions-list
+  // sort key — set on create, bumped on every persisted message below
   let sessionId = body.session_id;
   let session: PbRecord | null = null;
   if (sessionId) session = await getFirst(env, 'chat_sessions', `${byUser(user.id)} && id="${sessionId}"`);
@@ -240,9 +258,11 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
       user: user.id,
       title: message.slice(0, 60),
       model: body.model ?? user.preferred_model ?? undefined,
+      last_message_at: new Date().toISOString(),
     });
     sessionId = session.id;
   }
+  if (!sessionId) return json({ error: 'session_create_failed' }, 500, cors);
 
   // context digests from the PB mirrors (skip silently when not connected)
   let calDigest = '(no intervals.icu account connected — ask the athlete to connect one in Settings; you can still talk training)';
@@ -308,8 +328,11 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
     role: 'user',
     content: message,
   });
+  await bumpSessionActivity(env, sessionId);
 
   const model = resolveModel(body.model ?? user.preferred_model);
+  // thread the client's disconnect through: a stop/disconnect aborts the
+  // upstream read so we can persist the partial instead of burning tokens
   const upstream = await fetch(
     OPENROUTER_CHAT_URL,
     openRouterFetchInit({
@@ -318,6 +341,7 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
       messages,
       tools: COACH_TOOLS,
       stream: true,
+      signal: request.signal,
     }),
   );
   if (!upstream.ok || !upstream.body) {
@@ -327,19 +351,38 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
 
   const sessionIdFinal = sessionId;
   const encoder = new TextEncoder();
+  // client disconnect / stop button → persist the partial, skip further sends
+  let aborted = false;
+  const onAbort = () => {
+    aborted = true;
+  };
+  request.signal.addEventListener('abort', onAbort);
+
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event: string, data: unknown) =>
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      let clientClosed = false;
+      const send = (event: string, data: unknown) => {
+        if (aborted || clientClosed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          clientClosed = true;
+        }
+      };
       let full = '';
       const toolCalls: Array<{ id: string; name: string; args: string }> = [];
       let usage: Record<string, unknown> | null = null;
 
       try {
+        send('start', { session_id: sessionIdFinal });
         const reader = upstream.body!.getReader();
         const decoder = new TextDecoder();
         let buf = '';
         for (;;) {
+          if (aborted) {
+            await reader.cancel().catch(() => {});
+            break;
+          }
           const { done, value } = await reader.read();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
@@ -371,23 +414,39 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
             }
           }
         }
+      } catch (e) {
+        // an abort surfaces as a rejected read — the partial-persist below
+        // still runs; anything else is a real stream error
+        if (!aborted && !request.signal.aborted) {
+          send('error', { message: String(e).slice(0, 300) });
+        }
+      }
 
-        // persist assistant message
-        await createRecord(env, 'chat_messages', {
-          session: sessionIdFinal,
-          user: user.id,
-          role: 'assistant',
-          content: full,
-          tool_calls: toolCalls.length
-            ? toolCalls.map((t) => ({ id: t.id, function: { name: t.name, arguments: t.args } }))
-            : null,
-          usage,
-        });
+      // persist what streamed — the full reply, or the partial after a stop
+      // (assistant row with partial content; proposals only from COMPLETE
+      // tool calls: a cut-off call's argument JSON is dropped, not applied)
+      try {
+        if (full || toolCalls.some((tc) => !!tc && !!tc.id && tc.name !== '' && isCompleteJson(tc.args))) {
+          await createRecord(env, 'chat_messages', {
+            session: sessionIdFinal,
+            user: user.id,
+            role: 'assistant',
+            content: full,
+            tool_calls: toolCalls.filter(Boolean).length
+              ? toolCalls
+                  .filter((tc) => tc && (!aborted || (tc.id && tc.name && isCompleteJson(tc.args))))
+                  .map((t) => ({ id: t.id, function: { name: t.name, arguments: t.args } }))
+              : null,
+            usage,
+          });
+          await bumpSessionActivity(env, sessionIdFinal);
+        }
 
         // tool calls → proposals (validated; invalid ones reported, not fatal)
         const proposalErrors: Array<{ tool: string; error: string }> = [];
         for (const tc of toolCalls) {
           if (!tc?.name) continue;
+          if (aborted && !(tc.id && isCompleteJson(tc.args))) continue;
           let args: unknown;
           try {
             args = JSON.parse(tc.args || '{}');
@@ -409,14 +468,19 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
           } catch (e) {
             if (e instanceof ProposalValidationError) {
               proposalErrors.push({ tool: tc.name, error: e.message });
-            } else throw e;
+            } else if (!aborted) throw e;
           }
         }
         send('done', { session_id: sessionIdFinal, usage, proposal_errors: proposalErrors });
       } catch (e) {
-        send('error', { message: String(e).slice(0, 300) });
+        if (!aborted) send('error', { message: String(e).slice(0, 300) });
       } finally {
-        controller.close();
+        request.signal.removeEventListener('abort', onAbort);
+        try {
+          controller.close();
+        } catch {
+          // already cancelled by the client
+        }
       }
     },
   });

@@ -6,6 +6,7 @@ declare const process: {
   env: {
     EXPO_PUBLIC_PB_URL?: string;
     EXPO_PUBLIC_WORKER_URL?: string;
+    EXPO_PUBLIC_MOCK_CHAT?: string;
     [key: string]: string | undefined;
   };
 };

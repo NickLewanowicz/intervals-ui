@@ -117,7 +117,8 @@ export function Button({
   );
 }
 
-/** Round 44pt icon button (nav arrows, sync, eye, send). */
+/** Round icon button (nav arrows, sync, eye, send). `compact` shrinks the
+ *  visual to ~34-36px for dense chrome while hitSlop keeps the 44pt target. */
 export function IconButton({
   icon,
   onPress,
@@ -126,6 +127,7 @@ export function IconButton({
   size = 20,
   disabled,
   loading,
+  hitSlop,
   style,
 }: {
   icon: IconName;
@@ -135,6 +137,7 @@ export function IconButton({
   size?: number;
   disabled?: boolean;
   loading?: boolean;
+  hitSlop?: number;
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
@@ -144,6 +147,7 @@ export function IconButton({
     <PressableScale
       onPress={onPress}
       disabled={disabled || loading}
+      hitSlop={hitSlop}
       accessibilityRole="button"
       accessibilityLabel={label}
       style={[s.iconButton, tone === 'accent' && { backgroundColor: colors.accent, borderColor: colors.accent }, (disabled || loading) && s.buttonDisabled, style]}

@@ -152,15 +152,25 @@ await upsertCollection({
 const chatSessions = await upsertCollection({
   name: 'chat_sessions',
   type: 'base',
-  fields: [rel('user', USERS_ID), text('title', 120), text('model', 120)],
-  indexes: [],
+  fields: [
+    rel('user', USERS_ID),
+    text('title', 120),
+    text('model', 120),
+    // round-10 multi-session: pinned chats group on top of the sessions list
+    bool('pinned'),
+    // dedicated last-activity stamp (ISO text, sorts lexicographically) — a
+    // rename/pin must NOT reorder the list, so PB's auto `updated` is not the
+    // sort key (see docs/research/chat-ui-patterns.md §1)
+    text('last_message_at', 40),
+  ],
+  indexes: ['CREATE INDEX idx_chatsess_user_activity ON chat_sessions (user, last_message_at)'],
   listRule: 'user = @request.auth.id',
   viewRule: 'user = @request.auth.id',
   createRule: 'user = @request.auth.id',
   updateRule: 'user = @request.auth.id',
   deleteRule: 'user = @request.auth.id',
 });
-console.log('✓ chat_sessions ready');
+console.log('✓ chat_sessions ready (pinned + last_message_at, owner may update)');
 
 await upsertCollection({
   name: 'calendar_events',

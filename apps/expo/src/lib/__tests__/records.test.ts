@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { activityLine, eventLine, zoneSecondsOf } from '../format';
-import { toActivity, toEvent, toWellness } from '../records';
+import { toActivity, toAppUser, toEvent, toWellness } from '../records';
 
 describe('toEvent (PB calendar_events row → EventEx)', () => {
   it('prefers mirror columns and falls back to the data json', () => {
@@ -98,6 +98,20 @@ describe('toWellness', () => {
     });
     // form = ctl − atl (core convention) stays computable
     expect(w.ctl! - w.atl!).toBeCloseTo(17.1);
+  });
+});
+
+describe('toAppUser', () => {
+  it('carries the record updated timestamp for the settings caption', () => {
+    const u = toAppUser({
+      id: 'u1',
+      email: 'nick@imnick.dev',
+      name: 'Nick',
+      units: 'km',
+      updated: '2026-10-24 09:15:00.123Z',
+    });
+    expect(u.updated).toBe('2026-10-24 09:15:00.123Z');
+    expect(toAppUser({ id: 'u2' }).updated).toBeNull();
   });
 });
 

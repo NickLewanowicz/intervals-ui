@@ -28,6 +28,16 @@ export function chatMessagesFilter(sessionId: string): string {
   return `session = "${sessionId}"`;
 }
 
+/** The user's chat sessions (all; the list sorts/groups client-side). */
+export function chatSessionsFilter(userId: string): string {
+  return `user = "${userId}"`;
+}
+
+/** All proposals (any status) produced inside one chat session. */
+export function sessionProposalsFilter(sessionId: string): string {
+  return `session = "${sessionId}"`;
+}
+
 /** The mirror row of one upstream event (proposal before/after diffs). */
 export function intervalsIdFilter(userId: string, intervalsId: number): string {
   return `user = "${userId}" && intervals_id = "${intervalsId}"`;
