@@ -71,15 +71,59 @@ export interface WeeklyStats {
   zoneSeconds: Record<string, number>;
   /** Longest actual run distance in the week, meters. */
   longestRunM: number;
+  /** True when any planned distance came from time × pace (planned events often
+   *  carry moving_time but no distance — intervals.icu only fills what the plan
+   *  declared). UI marks such totals with "≈". */
+  plannedDistanceEstimated?: boolean;
+  /** Same flag for planned time estimated from distance × pace. */
+  plannedTimeEstimated?: boolean;
 }
 
 const sum = (xs: Array<number | undefined | null>) =>
   xs.reduce<number>((acc, x) => acc + (typeof x === 'number' ? x : 0), 0);
 
+/** Options for weeklyStats — new optional params stay backward-compatible. */
+export interface WeeklyStatsOpts {
+  /**
+   * Athlete's recent average pace in min/km (or threshold pace as fallback).
+   * When set, planned events missing distance get distance = time ÷ pace, and
+   * events missing moving_time get time = distance × pace. Estimated parts are
+   * flagged via plannedDistanceEstimated / plannedTimeEstimated — load is never
+   * fabricated (intervals.icu computes planned load properly).
+   */
+  paceMinPerKm?: number | null;
+}
+
+/**
+ * Recent actual average pace (min/km) over an activity window — the estimator
+ * input for weeklyStats. Run-family activities are preferred when any qualify
+ * (a mixed run/ride window would otherwise dilute the pace); falls back to all
+ * activities with both time and distance. Null when nothing qualifies.
+ */
+const RUN_SPORTS = new Set(['Run', 'TrailRun', 'VirtualRun', 'Treadmill']);
+export function averagePaceMinPerKm(activities: Activity[]): number | null {
+  const eligible = (a: Activity) =>
+    typeof a.moving_time === 'number' && a.moving_time > 0 && typeof a.distance === 'number' && a.distance > 0;
+  const paceOf = (list: Activity[]): number | null => {
+    let secs = 0;
+    let meters = 0;
+    for (const a of list) {
+      secs += a.moving_time!;
+      meters += a.distance!;
+    }
+    if (meters <= 0 || secs <= 0) return null;
+    return secs / 60 / (meters / 1000);
+  };
+  const runs = activities.filter((a) => eligible(a) && RUN_SPORTS.has(a.type ?? ''));
+  if (runs.length > 0) return paceOf(runs);
+  return paceOf(activities.filter(eligible));
+}
+
 export function weeklyStats(
   events: EventEx[],
   activities: Activity[],
   week: string,
+  opts: WeeklyStatsOpts = {},
 ): WeeklyStats {
   const planned = events.filter((e) => weekKey(eventDate(e)) === week);
   const actual = activities.filter((a) => weekKey(activityDate(a)) === week);
@@ -89,10 +133,31 @@ export function weeklyStats(
       zoneSeconds[zt.id] = (zoneSeconds[zt.id] ?? 0) + zt.secs;
     }
   }
+  // Per-event planned sums with pace-based estimation for half-declared events.
+  const pace =
+    typeof opts.paceMinPerKm === 'number' && opts.paceMinPerKm > 0 ? opts.paceMinPerKm : null;
+  let plannedDistanceM = 0;
+  let plannedTimeSec = 0;
+  let plannedDistanceEstimated = false;
+  let plannedTimeEstimated = false;
+  for (const e of planned) {
+    const hasDist = typeof e.distance === 'number' && e.distance > 0;
+    const hasTime = typeof e.moving_time === 'number' && e.moving_time > 0;
+    if (hasDist) plannedDistanceM += e.distance!;
+    else if (hasTime && pace) {
+      plannedDistanceM += (e.moving_time! / 60 / pace) * 1000;
+      plannedDistanceEstimated = true;
+    }
+    if (hasTime) plannedTimeSec += e.moving_time!;
+    else if (hasDist && pace) {
+      plannedTimeSec += (e.distance! / 1000) * pace * 60;
+      plannedTimeEstimated = true;
+    }
+  }
   return {
     weekOf: week,
-    plannedDistanceM: sum(planned.map((e) => e.distance)),
-    plannedTimeSec: sum(planned.map((e) => e.moving_time)),
+    plannedDistanceM,
+    plannedTimeSec,
     plannedLoad: sum(planned.map((e) => e.icu_training_load)),
     actualDistanceM: sum(actual.map((a) => a.distance)),
     actualTimeSec: sum(actual.map((a) => a.moving_time)),
@@ -101,6 +166,8 @@ export function weeklyStats(
     races: actual.filter((a) => a.race).length,
     zoneSeconds,
     longestRunM: actual.reduce((mx, a) => Math.max(mx, a.distance ?? 0), 0),
+    plannedDistanceEstimated: plannedDistanceEstimated || undefined,
+    plannedTimeEstimated: plannedTimeEstimated || undefined,
   };
 }
 

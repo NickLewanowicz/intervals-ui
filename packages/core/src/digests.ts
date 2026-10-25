@@ -61,11 +61,27 @@ export function calendarDigest(
     weekTotals.set(week, w);
   };
 
+  // Recent actual pace (min/km) — same estimator as weeklyStats, so the
+  // coach's digest totals agree with the calendar's totals card.
+  const paceSamples = activities
+    .map((a) => (a.distance && a.moving_time ? a.moving_time / 60 / (a.distance / 1000) : null))
+    .filter((v): v is number => typeof v === 'number' && v > 2 && v < 12);
+  const avgPace = paceSamples.length
+    ? paceSamples.reduce((a, b) => a + b, 0) / paceSamples.length
+    : null;
+  let plannedEstimated = false;
+
   const dayBlocks = dates.map((date) => {
     const { events, activities } = byDate.get(date)!;
     const week = weekKey(date);
     for (const e of events) {
-      bump(week, 'p', num(e.distance), num(e.moving_time), num(e.icu_training_load));
+      let d = num(e.distance);
+      const t = num(e.moving_time);
+      if (!d && t && avgPace) {
+        d = (t / 60) / avgPace * 1000;
+        plannedEstimated = true;
+      }
+      bump(week, 'p', d, t, num(e.icu_training_load));
     }
     for (const a of activities) {
       bump(week, 'a', num(a.distance), num(a.moving_time), num(a.icu_training_load));
@@ -112,24 +128,26 @@ export function calendarDigest(
   for (const block of dayBlocks) {
     if (lastWeek && block.week !== lastWeek) {
       const w = weekTotals.get(lastWeek);
-      if (w) out.push(weekTotalsLine(lastWeek, w));
+      if (w) out.push(weekTotalsLine(lastWeek, w, plannedEstimated));
     }
     out.push(block.text);
     lastWeek = block.week;
   }
   const last = weekTotals.get(lastWeek);
-  if (last) out.push(weekTotalsLine(lastWeek, last));
+  if (last) out.push(weekTotalsLine(lastWeek, last, plannedEstimated));
   return out.join('\n');
 }
 
 function weekTotalsLine(
   week: string,
   w: { pd: number; pt: number; pl: number; ad: number; at: number; al: number },
+  estimated = false,
 ): string {
   const parts = [
-    `WEEK OF ${week} TOTALS (computed — quote these, do not re-sum): planned ${formatKm(w.pd)}/${formatDuration(w.pt)}/load ${Math.round(w.pl)}`,
+    `WEEK OF ${week} TOTALS (computed — quote these, do not re-sum): planned ${estimated ? '≈' : ''}${formatKm(w.pd)}/${formatDuration(w.pt)}/load ${Math.round(w.pl)}`,
     `actual ${formatKm(w.ad)}/${formatDuration(w.at)}/load ${Math.round(w.al)}`,
   ];
+  if (estimated) parts.push('(planned distance estimated from time at recent pace where plans declared time only)');
   return parts.join(' · ');
 }
 

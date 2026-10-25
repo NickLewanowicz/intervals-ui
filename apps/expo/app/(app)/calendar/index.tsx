@@ -5,6 +5,7 @@
  * truly scrolling body (FIX-2). Week/month switches get a ≤200ms slide+fade.
  */
 import {
+  averagePaceMinPerKm,
   buildDayCells,
   formatDuration,
   formatKm,
@@ -35,7 +36,7 @@ import {
   weekWindow,
 } from '@/lib/dates';
 import { activityLine, eventLine, relativeTime } from '@/lib/format';
-import { useCalendarWindow, useInvalidateMirrors, useSyncState } from '@/lib/queries';
+import { useCalendarWindow, useInvalidateMirrors, useSyncState, useThresholdPace } from '@/lib/queries';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 import type { DayCell } from '@intervals/core';
@@ -56,9 +57,15 @@ export default function CalendarScreen() {
   const grid = useMemo(() => monthGrid(monthAnc), [monthAnc]);
   const window = view === 'week' ? week : { from: grid.from, to: grid.to };
 
-  const { data, isLoading, isError, error, refetch } = useCalendarWindow(window.from, window.to);
+  const { data, isLoading, isFetching, isError, error, refetch } = useCalendarWindow(window.from, window.to);
   const syncState = useSyncState();
+  const thresholdPace = useThresholdPace();
   const invalidateMirrors = useInvalidateMirrors();
+
+  // round-8 FIX-3: a first-load (no data yet, fetch in flight) shows the
+  // skeleton ON this screen — never a blank body. isLoading alone misses the
+  // seeding/refetch states (isFetching), so combine them.
+  const firstLoad = !data && (isLoading || isFetching);
 
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -99,9 +106,13 @@ export default function CalendarScreen() {
   const events = data?.events ?? [];
   const activities = data?.activities ?? [];
   const cells = useMemo(() => buildDayCells(events, activities), [events, activities]);
+  // round-8 FIX-4: planned events often declare time but no distance — estimate
+  // from the athlete's recent actual pace (threshold pace as fallback).
+  const recentPace = useMemo(() => averagePaceMinPerKm(activities), [activities]);
+  const pace = recentPace ?? thresholdPace.data ?? null;
   const stats = useMemo(
-    () => weeklyStats(events, activities, weekStart),
-    [events, activities, weekStart],
+    () => weeklyStats(events, activities, weekStart, { paceMinPerKm: pace }),
+    [events, activities, weekStart, pace],
   );
   // FIX-3: in month view aggregate the visible month instead of the stale week
   const monthStats = useMemo(() => {
@@ -114,6 +125,8 @@ export default function CalendarScreen() {
       | 'actualTimeSec'
       | 'actualLoad'
       | 'longestRunM'
+      | 'plannedDistanceEstimated'
+      | 'plannedTimeEstimated'
     > = {
       plannedDistanceM: 0,
       plannedTimeSec: 0,
@@ -124,7 +137,7 @@ export default function CalendarScreen() {
       longestRunM: 0,
     };
     for (const w of grid.weeks) {
-      const ws = weeklyStats(events, activities, w[0]!);
+      const ws = weeklyStats(events, activities, w[0]!, { paceMinPerKm: pace });
       acc.plannedDistanceM += ws.plannedDistanceM;
       acc.plannedTimeSec += ws.plannedTimeSec;
       acc.plannedLoad += ws.plannedLoad;
@@ -132,9 +145,11 @@ export default function CalendarScreen() {
       acc.actualTimeSec += ws.actualTimeSec;
       acc.actualLoad += ws.actualLoad;
       acc.longestRunM = Math.max(acc.longestRunM, ws.longestRunM);
+      acc.plannedDistanceEstimated = acc.plannedDistanceEstimated || ws.plannedDistanceEstimated;
+      acc.plannedTimeEstimated = acc.plannedTimeEstimated || ws.plannedTimeEstimated;
     }
     return acc;
-  }, [events, activities, grid]);
+  }, [events, activities, grid, pace]);
 
   // week/month switch transition direction (forward = slide from right)
   const navKey = `${view}:${view === 'week' ? weekStart : monthAnc}`;
@@ -244,8 +259,12 @@ export default function CalendarScreen() {
               showLongest={view === 'week'}
             />
           </GlassCard>
+          {(view === 'week' ? stats : monthStats).plannedDistanceEstimated ||
+          (view === 'week' ? stats : monthStats).plannedTimeEstimated ? (
+            <Text style={s.statFootnote}>≈ estimated from time at your recent pace</Text>
+          ) : null}
 
-          {isLoading ? (
+          {firstLoad ? (
             <Loading label="Loading calendar…" />
           ) : isError ? (
             <ErrorBox
@@ -308,7 +327,7 @@ export default function CalendarScreen() {
               </View>
             </GlassCard>
           )}
-          {!isLoading && !isError && events.length === 0 && activities.length === 0 ? (
+          {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
             <Empty
               message="No events in this window. Sync now, or ask your coach to plan something."
               icon="calendar-clear-outline"
@@ -335,6 +354,8 @@ function StatsStrip({
     | 'actualTimeSec'
     | 'actualLoad'
     | 'longestRunM'
+    | 'plannedDistanceEstimated'
+    | 'plannedTimeEstimated'
   >;
   showLongest: boolean;
 }) {
@@ -345,12 +366,12 @@ function StatsStrip({
       <View style={s.statsGrid}>
         <Stat
           label="Distance"
-          planned={fmtKmOrDash(stats.plannedDistanceM)}
+          planned={fmtKmOrDash(stats.plannedDistanceM, stats.plannedDistanceEstimated)}
           actual={fmtKmOrDash(stats.actualDistanceM)}
         />
         <Stat
           label="Time"
-          planned={stats.plannedTimeSec ? formatDuration(stats.plannedTimeSec) : '—'}
+          planned={fmtDurOrDash(stats.plannedTimeSec, stats.plannedTimeEstimated)}
           actual={stats.actualTimeSec ? formatDuration(stats.actualTimeSec) : '—'}
         />
         <Stat
@@ -372,8 +393,13 @@ function StatsStrip({
   );
 }
 
-function fmtKmOrDash(m: number): string {
-  return m > 0 ? formatKm(m) : '—';
+/** Planned cells carry "≈" when (part of) the total was pace-estimated. */
+function fmtKmOrDash(m: number, estimated?: boolean): string {
+  return m > 0 ? (estimated ? '≈' : '') + formatKm(m) : '—';
+}
+
+function fmtDurOrDash(sec: number, estimated?: boolean): string {
+  return sec > 0 ? (estimated ? '≈' : '') + formatDuration(sec) : '—';
 }
 
 function Stat({
@@ -578,6 +604,7 @@ const styles = (p: Palette) =>
     statSep: { color: p.muted },
     statActual: { color: p.text, fontWeight: '600' },
     statsHint: { color: p.muted, fontSize: fontSize.tiny },
+    statFootnote: { color: p.muted, fontSize: fontSize.tiny, marginTop: -spacing.sm + 2 },
     days: { gap: spacing.sm },
     dayCard: {
       backgroundColor: p.card,

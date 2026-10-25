@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calendarWindowFilter,
   chatMessagesFilter,
+  sportSettingsFilter,
   syncStateFilter,
   wellnessFilter,
 } from '../filters';
@@ -31,5 +32,6 @@ describe('simple filters', () => {
     expect(wellnessFilter('u1')).toBe('user = "u1"');
     expect(syncStateFilter('u1')).toBe('user = "u1"');
     expect(chatMessagesFilter('s9')).toBe('session = "s9"');
+    expect(sportSettingsFilter('u1')).toBe('user = "u1"');
   });
 });

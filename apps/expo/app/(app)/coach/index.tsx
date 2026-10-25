@@ -330,7 +330,9 @@ export default function CoachScreen() {
               ) : m.role === 'assistant' ? (
                 <MarkdownBubble text={m.content} style={s.bubbleText} streaming={m.streaming} />
               ) : (
-                <Text style={s.bubbleText}>{m.content}</Text>
+                // FIX-2: onAccent (near-white) on the accent fill passes AA in
+                // BOTH themes — p.text was 3.1:1 in light. Assistant untouched.
+                <Text style={s.bubbleTextUser}>{m.content}</Text>
               )}
             </View>
           ))
@@ -460,6 +462,9 @@ const styles = (p: Palette) =>
       borderColor: p.border,
     },
     bubbleText: { color: p.text, fontSize: fontSize.body, lineHeight: 21 },
+    // round-8 FIX-2: user bubbles sit on the accent fill — ink must be the
+    // inverted onAccent (5.5:1 light / 5.1:1 dark), not p.text (3.1:1 light).
+    bubbleTextUser: { color: p.onAccent, fontSize: fontSize.body, lineHeight: 21 },
     mdGap: { height: spacing.xs },
     mdBulletRow: { flexDirection: 'row', gap: spacing.sm },
     mdBulletGlyph: { color: p.muted },

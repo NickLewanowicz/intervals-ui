@@ -157,7 +157,7 @@ const chatSessions = await upsertCollection({
   listRule: 'user = @request.auth.id',
   viewRule: 'user = @request.auth.id',
   createRule: 'user = @request.auth.id',
-  updateRule: null,
+  updateRule: 'user = @request.auth.id',
   deleteRule: 'user = @request.auth.id',
 });
 console.log('✓ chat_sessions ready');

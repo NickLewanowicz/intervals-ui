@@ -32,3 +32,8 @@ export function chatMessagesFilter(sessionId: string): string {
 export function intervalsIdFilter(userId: string, intervalsId: number): string {
   return `user = "${userId}" && intervals_id = "${intervalsId}"`;
 }
+
+/** The user's sport_settings row (one per user; `data` json holds SportSettings[]). */
+export function sportSettingsFilter(userId: string): string {
+  return `user = "${userId}"`;
+}

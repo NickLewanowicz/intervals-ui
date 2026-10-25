@@ -39,7 +39,11 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         {state.routes.map((route, i) => {
           const { options } = descriptors[route.key]!;
           const focused = state.index === i;
-          const icons = TAB_ICONS[route.name] ?? { on: 'ellipse', off: 'ellipse-outline' };
+          // Expo Router names leaf tabs 'coach/index' when the directory has no
+          // nested layout (directories WITH one, like calendar/, get the plain
+          // name) — normalize so every tab finds its icon (round-8 FIX-1).
+          const nameKey = route.name.replace(/\/index$/, '');
+          const icons = TAB_ICONS[nameKey] ?? { on: 'ellipse', off: 'ellipse-outline' };
           const label = options.title ?? route.name;
           const badge = typeof options.tabBarBadge === 'number' ? options.tabBarBadge : 0;
           const tint = focused ? colors.onAccent : colors.muted;

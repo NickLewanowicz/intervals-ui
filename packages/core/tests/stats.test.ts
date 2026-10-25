@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   activityDate,
+  averagePaceMinPerKm,
   buildDayCells,
   eventDate,
   formatDuration,
@@ -97,6 +98,91 @@ describe('weeklyStats', () => {
     expect(s.actualDistanceM).toBe(0);
     expect(s.actualTimeSec).toBe(0);
     expect(s.longestRunM).toBe(0);
+  });
+});
+
+describe('weeklyStats estimation (planned events with partial data)', () => {
+  const W = '2026-10-19';
+
+  it('estimates distance from moving_time × pace; real values unmarked', () => {
+    const events = [
+      // declared both → real, unmarked
+      ev({ start_date_local: '2026-10-20T06:00:00', distance: 8000, moving_time: 2400 }),
+      // declared time only → distance estimated at 5 min/km → 60min / 5 = 12km
+      ev({ start_date_local: '2026-10-21T06:00:00', moving_time: 3600 }),
+    ];
+    const s = weeklyStats(events, [], W, { paceMinPerKm: 5 });
+    expect(s.plannedDistanceM).toBeCloseTo(20000, 5);
+    expect(s.plannedTimeSec).toBe(6000); // real time stays real
+    expect(s.plannedDistanceEstimated).toBe(true);
+    expect(s.plannedTimeEstimated).toBeUndefined();
+  });
+
+  it('estimates time from distance × pace in reverse; mixed weeks flag once', () => {
+    const events = [
+      ev({ start_date_local: '2026-10-20T06:00:00', distance: 10000 }), // no time → est 50min @5
+      ev({ start_date_local: '2026-10-21T06:00:00', distance: 6000, moving_time: 1800 }), // real both
+    ];
+    const s = weeklyStats(events, [], W, { paceMinPerKm: 5 });
+    expect(s.plannedTimeSec).toBe(4800); // 3000 + 1800
+    expect(s.plannedDistanceM).toBe(16000);
+    expect(s.plannedTimeEstimated).toBe(true);
+    expect(s.plannedDistanceEstimated).toBeUndefined();
+  });
+
+  it('without pace (or with invalid pace) behaves exactly like before', () => {
+    const events = [
+      ev({ start_date_local: '2026-10-20T06:00:00', distance: 8000, moving_time: 2400 }),
+      ev({ start_date_local: '2026-10-21T06:00:00', moving_time: 3600 }), // no distance, no estimate
+    ];
+    const legacy = weeklyStats(events, [], W);
+    expect(legacy.plannedDistanceM).toBe(8000);
+    expect(legacy.plannedTimeSec).toBe(6000);
+    expect(legacy.plannedDistanceEstimated).toBeUndefined();
+    expect(legacy.plannedTimeEstimated).toBeUndefined();
+
+    const badPace = weeklyStats(events, [], W, { paceMinPerKm: 0 });
+    expect(badPace.plannedDistanceM).toBe(8000);
+    expect(badPace.plannedDistanceEstimated).toBeUndefined();
+  });
+
+  it('never fabricates load', () => {
+    const events = [ev({ start_date_local: '2026-10-20T06:00:00', moving_time: 3600 })];
+    const s = weeklyStats(events, [], W, { paceMinPerKm: 5 });
+    expect(s.plannedLoad).toBe(0);
+    expect(s.plannedDistanceM).toBeCloseTo(12000, 5);
+  });
+
+  it('skips events with neither distance nor time', () => {
+    const events = [ev({ start_date_local: '2026-10-20T06:00:00', name: 'Rest' })];
+    const s = weeklyStats(events, [], W, { paceMinPerKm: 5 });
+    expect(s.plannedDistanceM).toBe(0);
+    expect(s.plannedTimeSec).toBe(0);
+    expect(s.plannedDistanceEstimated).toBeUndefined();
+  });
+});
+
+describe('averagePaceMinPerKm', () => {
+  it('prefers run-family activities when any qualify', () => {
+    const acts = [
+      act({ type: 'Run', distance: 10000, moving_time: 3000 }), // 5:00/km
+      act({ type: 'Ride', distance: 40000, moving_time: 5400 }), // would dilute to ~3.6
+    ];
+    expect(averagePaceMinPerKm(acts)).toBeCloseTo(5, 5);
+  });
+
+  it('falls back to all activities when no runs qualify', () => {
+    const acts = [
+      act({ type: 'Ride', distance: 30000, moving_time: 3600 }), // 2:00/km
+      act({ type: 'Walk', distance: 3000, moving_time: 1800 }), // 10:00/km
+    ];
+    // 5400s total / 33km = 2.7272... min/km
+    expect(averagePaceMinPerKm(acts)).toBeCloseTo(5400 / 60 / 33, 5);
+  });
+
+  it('ignores activities missing time or distance → null when nothing qualifies', () => {
+    expect(averagePaceMinPerKm([act({ distance: 5000 }), act({ moving_time: 1800 })])).toBeNull();
+    expect(averagePaceMinPerKm([])).toBeNull();
   });
 });
 

@@ -2,13 +2,14 @@
  * React Query hooks over the PB mirrors + worker. All PB list reads filter by
  * the signed-in user's id; the SDK URL-encodes the filter string.
  */
-import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
-import type { Activity, EventEx, WellnessDay } from '@intervals/core';
+import { useQuery, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
+import type { Activity, EventEx, SportSettings, WellnessDay } from '@intervals/core';
 import { listProposals, type SyncResult } from './api';
 import {
   calendarWindowFilter,
   chatMessagesFilter,
   intervalsIdFilter,
+  sportSettingsFilter,
   syncStateFilter,
   wellnessFilter,
 } from './filters';
@@ -22,6 +23,7 @@ export const queryKeys = {
   chatMessages: (sessionId: string) => ['chat-messages', sessionId] as const,
   pendingProposals: ['pending-proposals'] as const,
   mirroredEvent: (intervalsId: number) => ['mirrored-event', intervalsId] as const,
+  thresholdPace: ['threshold-pace'] as const,
 };
 
 export interface CalendarWindow {
@@ -29,11 +31,47 @@ export interface CalendarWindow {
   activities: Activity[];
 }
 
-/** Events + activities whose start_date_local falls in [from, to] (ISO dates). */
+const inWindow = (dateLocal: string, from: string, to: string) => {
+  const d = dateLocal.slice(0, 10);
+  return d >= from && d <= to;
+};
+
+/**
+ * The tightest already-cached calendar window that fully contains [from, to]
+ * (e.g. the calendar screen's week window seeding a pushed day screen), sliced
+ * to the requested range. Undefined when nothing covers it — the query then
+ * loads as usual.
+ */
+function cachedContainingWindow(qc: QueryClient, from: string, to: string): CalendarWindow | undefined {
+  const entries = qc.getQueriesData<CalendarWindow>({ queryKey: ['calendar'] });
+  let best: { from: string; to: string; data: CalendarWindow } | undefined;
+  for (const [key, data] of entries) {
+    if (!data) continue;
+    const f = key[1];
+    const t = key[2];
+    if (typeof f !== 'string' || typeof t !== 'string') continue;
+    if (f > from || t < to) continue; // must fully contain the requested window
+    if (!best || (f >= best.from && t <= best.to)) best = { from: f, to: t, data };
+  }
+  if (!best) return undefined;
+  return {
+    events: best.data.events.filter((e) => inWindow(e.start_date_local, from, to)),
+    activities: best.data.activities.filter((a) => inWindow(a.start_date_local, from, to)),
+  };
+}
+
+/**
+ * Events + activities whose start_date_local falls in [from, to] (ISO dates).
+ * Seeds from any cached containing window via initialData so a day pushed from
+ * the calendar renders INSTANTLY with known info and only refines in the
+ * background — no spinner when the data is already on hand.
+ */
 export function useCalendarWindow(from: string, to: string): UseQueryResult<CalendarWindow> {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: queryKeys.calendar(from, to),
     enabled: !!currentUserId(),
+    initialData: () => cachedContainingWindow(qc, from, to),
     queryFn: async (): Promise<CalendarWindow> => {
       const user = currentUserId();
       if (!user) return { events: [], activities: [] };
@@ -43,6 +81,32 @@ export function useCalendarWindow(from: string, to: string): UseQueryResult<Cale
         pb.collection('activities').getList(1, 300, { filter, sort: 'start_date_local' }),
       ]);
       return { events: ev.items.map(toEvent), activities: ac.items.map(toActivity) };
+    },
+  });
+}
+
+/**
+ * The athlete's threshold pace (min/km) from the mirrored sport settings —
+ * the fallback estimator input when the window has no usable recent pace.
+ */
+export function useThresholdPace(): UseQueryResult<number | null> {
+  return useQuery({
+    queryKey: queryKeys.thresholdPace,
+    enabled: !!currentUserId(),
+    staleTime: 10 * 60_000,
+    queryFn: async (): Promise<number | null> => {
+      const user = currentUserId();
+      if (!user) return null;
+      const res = await pb
+        .collection('sport_settings')
+        .getList(1, 1, { filter: sportSettingsFilter(user) });
+      const row = res.items[0];
+      const raw: unknown = row?.data;
+      const list: SportSettings[] = Array.isArray(raw) ? (raw as SportSettings[]) : raw ? [raw as SportSettings] : [];
+      for (const s of list) {
+        if (s && typeof s.threshold_pace === 'number' && s.threshold_pace > 0) return s.threshold_pace;
+      }
+      return null;
     },
   });
 }
