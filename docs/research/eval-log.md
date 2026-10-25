@@ -226,3 +226,16 @@ before shipping any v3 prompt edit.
 - ✅ schedule-shakeout.json
 - ✅ totals-discipline.json
 - ✅ update-not-delete.json
+
+## 2026-10-25T04:37:38.383Z — z-ai/glm-5.3-flash (10 fixtures, ALL PASS)
+- tokens: 66195 in / 3059 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ goal-time-vdot.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ✅ update-not-delete.json

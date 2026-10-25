@@ -42,13 +42,16 @@ describe('buildCoachSystemPrompt', () => {
     expect(prompt).toContain('prefer ONE update_event over a delete+create pair');
   });
 
-  it('v2 embeds the 80/20 knowledge base as the planning anchor', () => {
-    expect(COACH_PROMPT_VERSION).toBeGreaterThanOrEqual(2);
+  it('embeds the 80/20 knowledge base as the planning anchor (public-science framing)', () => {
     expect(prompt).toContain('80/20');
     expect(prompt).toContain(TRAINING_KNOWLEDGE.slice(0, 200)); // KB actually embedded
     expect(prompt).toContain('moderate trap');
     expect(prompt).toContain('not medical advice');
-    expect(TRAINING_SOURCES).toMatch(/80\/20 Running/);
+    // reframed sourcing: public science + credit, not book promotion
+    expect(TRAINING_SOURCES).toContain('popularized by Matt Fitzgerald');
+    expect(TRAINING_SOURCES).toContain('Seiler');
+    expect(TRAINING_KNOWLEDGE).toContain('Fueling strategy');
+    expect(TRAINING_KNOWLEDGE).toContain('VDOT pace reference');
   });
 
   it('keeps the system prompt within a sane budget for the roster models', () => {

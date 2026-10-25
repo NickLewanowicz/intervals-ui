@@ -12,7 +12,7 @@
  */
 import { TRAINING_KNOWLEDGE, TRAINING_SOURCES } from './knowledge';
 
-export const COACH_PROMPT_VERSION = 3;
+export const COACH_PROMPT_VERSION = 4;
 
 export interface CoachContext {
   athleteName?: string;
@@ -24,6 +24,8 @@ export interface CoachContext {
   wellnessDigest: string;
   /** zone names + threshold paces from sport-settings */
   zonesDigest: string;
+  /** computed VDOT + training pace bands from the athlete's recent race (may be absent) */
+  vdotDigest?: string;
   /** user's stated preferences/goals (from their settings profile) */
   athleteProfile: string;
 }
@@ -43,7 +45,7 @@ ${ctx.wellnessDigest}
 
 ### Training zones
 ${ctx.zonesDigest}
-
+${ctx.vdotDigest ? `\n### VDOT pace reference (computed from a recent race — use for "what pace?" answers and goal-time math)\n${ctx.vdotDigest}` : ""}
 ### Athlete profile
 ${ctx.athleteProfile || 'No profile set yet. Ask about goals when it matters.'}
 

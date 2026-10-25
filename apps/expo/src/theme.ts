@@ -35,6 +35,9 @@ export interface Palette {
   borderStrong: string;
   text: string;
   muted: string;
+  /** Muted text that must stay AA-legible on busy/imagery surfaces (hero mesh)
+   *  and at tiny sizes — darker than `muted` in light, brighter in dark. */
+  mutedStrong: string;
   /** Inverted text on accent fills. */
   onAccent: string;
   /** Accent as a fill (buttons, active pills, user bubbles). */
@@ -66,8 +69,10 @@ export const dark: Palette = {
   borderStrong: 'rgba(255, 255, 255, 0.18)',
   text: '#f3f5fa',
   muted: '#98a1b8',
+  mutedStrong: '#ccd4e6',
   onAccent: '#ffffff',
-  accent: '#5b74f0',
+  // deepened from #5b74f0 so white-on-accent passes WCAG AA (5.05:1) in dark mode
+  accent: '#4a63e0',
   accentSoft: 'rgba(91, 116, 240, 0.16)',
   accentText: '#96a9ff',
   success: '#41b26e',
@@ -89,6 +94,7 @@ export const light: Palette = {
   borderStrong: 'rgba(67, 89, 230, 0.45)',
   text: '#10193b',
   muted: '#5f6c92',
+  mutedStrong: '#47516e',
   onAccent: '#ffffff',
   accent: '#4359e6',
   accentSoft: 'rgba(67, 89, 230, 0.10)',

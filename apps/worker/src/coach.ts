@@ -2,7 +2,17 @@
  * Builds the coach's data digests from the PocketBase mirrors.
  * Pure functions — unit-tested; the LLM never sees raw JSON it doesn't need.
  */
-import { form, formatDuration, formatKm, formatPace, isRaceEvent, weekKey } from '@intervals/core';
+import {
+  form,
+  formatDuration,
+  formatKm,
+  formatPace,
+  isRaceEvent,
+  weekKey,
+  vdotFromPerformance,
+  trainingPaces,
+  formatPaceBand,
+} from '@intervals/core';
 import type { EventEx, Activity, WellnessDay, SportSettings } from '@intervals/core';
 
 export interface MirrorEvent extends Partial<EventEx> {
@@ -159,4 +169,39 @@ export function zonesDigest(settings: SportSettings[] | null | undefined): strin
     : null;
   const lthr = run.lthr ? `LTHR ${run.lthr}bpm` : null;
   return [hr, pace, lthr].filter(Boolean).join('\n') || '(zone settings incomplete)';
+}
+
+/**
+ * VDOT pace reference from the athlete's recent recorded races (last 90
+ * days, best/highest VDOT wins; marked by intervals.icu with race=true or
+ * sub_type RACE). Null when no race data — the prompt asks the coach to
+ * estimate from threshold pace or ask instead.
+ */
+export function vdotDigest(activities: MirrorActivity[], now = new Date()): string | null {
+  const candidates = activities.filter(
+    (a) => a.race || a.sub_type === 'RACE',
+  );
+  let best: { vdot: number; name: string; date: string } | null = null;
+  for (const a of candidates) {
+    const d = localDate(a.start_date_local);
+    const ageDays = (now.getTime() - new Date(d + 'T12:00:00Z').getTime()) / 86400_000;
+    if (ageDays > 90 || ageDays < -1) continue;
+    if (!a.distance || !a.moving_time) continue;
+    const vdot = vdotFromPerformance(a.distance, a.moving_time);
+    if (vdot == null) continue;
+    if (!best || vdot > best.vdot) best = { vdot, name: a.name ?? 'Race', date: d };
+  }
+  if (!best) return null;
+  const paces = trainingPaces(best.vdot);
+  if (!paces) return null;
+  const lines = [
+    `Estimated VDOT ${best.vdot} (best recent race: ${best.name}, ${best.date}). Training paces (/km):`,
+    `- Easy ${formatPaceBand(paces.easy)}`,
+    `- Marathon ${formatPaceBand(paces.marathon)}`,
+    `- Threshold ${formatPaceBand(paces.threshold)}`,
+    `- Interval ${formatPaceBand(paces.interval)}`,
+    `- Repetition ${formatPaceBand(paces.repetition)}`,
+    `(Older or shorter race results give rougher estimates — treat as current-fitness anchor, recalibrated after each race.)`,
+  ];
+  return lines.join('\n');
 }

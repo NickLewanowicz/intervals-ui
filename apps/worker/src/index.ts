@@ -34,7 +34,7 @@ import {
   ProposalValidationError,
 } from '@intervals/core';
 import type { OpenRouterMessage } from '@intervals/core';
-import { calendarDigest, wellnessDigest, zonesDigest } from './coach';
+import { calendarDigest, vdotDigest, wellnessDigest, zonesDigest } from './coach';
 import {
   byUser,
   createRecord,
@@ -245,6 +245,7 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
   let calDigest = '(no intervals.icu account connected — ask the athlete to connect one in Settings; you can still talk training)';
   let wellDigest = '(no wellness data)';
   let zDigest = '(no zone settings)';
+  let vDigest: string | null = null;
   if (user.intervals_api_key) {
     const now = new Date();
     const back = new Date(now.getTime() - 21 * 86400_000).toISOString().slice(0, 10);
@@ -262,6 +263,10 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
     );
     wellDigest = wellnessDigest(wRows.map((r) => ({ ...(r.data as object), date: r.date }) as never));
     zDigest = zonesDigest((zRow?.data as never) ?? null);
+    vDigest = vdotDigest(
+      acRows.map((r) => r.data as never),
+      now,
+    );
   }
 
   const system = buildCoachSystemPrompt({
@@ -271,6 +276,7 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
     calendarDigest: calDigest,
     wellnessDigest: wellDigest,
     zonesDigest: zDigest,
+    vdotDigest: vDigest ?? undefined,
     athleteProfile: user.athlete_profile ?? '',
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calendarDigest, wellnessDigest, zonesDigest } from '../src/coach';
+import { calendarDigest, vdotDigest, wellnessDigest, zonesDigest } from '../src/coach';
 
 describe('calendarDigest', () => {
   it('renders planned vs done with ids the coach can reference', () => {
@@ -102,5 +102,50 @@ describe('zonesDigest', () => {
   it('degrades without data', () => {
     expect(zonesDigest(null)).toContain('not synced');
     expect(zonesDigest([])).toContain('not synced');
+  });
+});
+
+describe('vdotDigest', () => {
+  it('computes from the best recent race and renders pace bands', () => {
+    const now = new Date('2026-10-24T12:00:00Z');
+    const digest = vdotDigest(
+      [
+        {
+          start_date_local: '2026-09-20T09:00:00',
+          race: true,
+          name: 'Half marathon',
+          distance: 21097.5,
+          moving_time: 89 * 60 + 10,
+        },
+        {
+          start_date_local: '2026-10-11T09:00:00',
+          race: true,
+          name: 'Marathon',
+          distance: 42195,
+          moving_time: 3 * 3600 + 49 * 60,
+        },
+      ],
+      now,
+    );
+    expect(digest).toContain('VDOT 51.5');
+    expect(digest).toContain('Half marathon, 2026-09-20');
+    expect(digest).toContain('Easy 4:47–5:44/km');
+    expect(digest).toContain('Threshold 4:09–4:21/km');
+  });
+
+  it('ignores stale races and non-races', () => {
+    const now = new Date('2026-10-24T12:00:00Z');
+    expect(
+      vdotDigest(
+        [{ start_date_local: '2026-01-10T09:00:00', race: true, distance: 21097.5, moving_time: 5340 }],
+        now,
+      ),
+    ).toBeNull();
+    expect(
+      vdotDigest(
+        [{ start_date_local: '2026-10-20T09:00:00', distance: 8823, moving_time: 2935 }],
+        now,
+      ),
+    ).toBeNull();
   });
 });
