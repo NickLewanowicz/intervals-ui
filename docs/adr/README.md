@@ -7,3 +7,4 @@
 | 0003 | Coach API on a Cloudflare Worker; Pages-Function fallback; BYO keys server-side | Accepted |
 | 0004 | Value-tier flash model default (glm-5.3-flash), eval-gated changes | Accepted |
 | 0005 | One Expo codebase for web + native (static export to Pages) | Accepted |
+| 0006 | Hybrid chat transport: client-first, Worker for writes/crons | Accepted |

@@ -26,15 +26,18 @@ import {
   COACH_TOOLS,
   OPENROUTER_CHAT_URL,
   buildCoachSystemPrompt,
+  calendarDigest,
   createIntervalsClient,
   openRouterFetchInit,
   resolveModel,
   validateProposal,
+  vdotDigest,
+  wellnessDigest,
+  zonesDigest,
   coachUid,
   ProposalValidationError,
 } from '@intervals/core';
 import type { OpenRouterMessage } from '@intervals/core';
-import { calendarDigest, vdotDigest, wellnessDigest, zonesDigest } from './coach';
 import {
   byUser,
   createRecord,

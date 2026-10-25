@@ -1,19 +1,14 @@
 /**
  * Builds the coach's data digests from the PocketBase mirrors.
  * Pure functions — unit-tested; the LLM never sees raw JSON it doesn't need.
+ *
+ * ADR-0006: shared by the Worker chat handler AND the client's direct
+ * chat path so both transports build identical prompts from the same
+ * mirror rows.
  */
-import {
-  form,
-  formatDuration,
-  formatKm,
-  formatPace,
-  isRaceEvent,
-  weekKey,
-  vdotFromPerformance,
-  trainingPaces,
-  formatPaceBand,
-} from '@intervals/core';
-import type { EventEx, Activity, WellnessDay, SportSettings } from '@intervals/core';
+import { formatDuration, formatKm, formatPace, isRaceEvent, weekKey } from './stats';
+import { formatPaceBand, trainingPaces, vdotFromPerformance } from './vdot';
+import type { Activity, EventEx, SportSettings, WellnessDay } from './types';
 
 export interface MirrorEvent extends Partial<EventEx> {
   intervals_id?: number;

@@ -6,3 +6,4 @@ export * from './models';
 export * from './prompts/coach';
 export * from './workout-parse';
 export * from './vdot';
+export * from './digests';

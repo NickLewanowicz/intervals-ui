@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calendarDigest, vdotDigest, wellnessDigest, zonesDigest } from '../src/coach';
+import { calendarDigest, vdotDigest, wellnessDigest, zonesDigest } from '../src/digests';
 
 describe('calendarDigest', () => {
   it('renders planned vs done with ids the coach can reference', () => {

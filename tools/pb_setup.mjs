@@ -75,6 +75,15 @@ const rel = (name, collectionId, { required = true, cascade = true } = {}) => ({
 
 const OWNER_READ = { listRule: 'user = @request.auth.id', viewRule: 'user = @request.auth.id' };
 const LOCKED = { createRule: null, updateRule: null, deleteRule: null }; // superuser (worker) only
+// ADR-0006 hybrid chat transport: the CLIENT creates its own chat turns and
+// tool-call proposals (owner-scoped: the row's user must be the caller).
+// Update/delete stay locked — apply/dismiss and status transitions remain
+// Worker-only (the intervals.icu key lives server-side).
+const OWNER_CREATE = {
+  createRule: 'user = @request.auth.id && @request.body.user = @request.auth.id',
+  updateRule: null,
+  deleteRule: null,
+};
 
 // this PB version requires explicit autodate fields on base collections
 const AUTODATES = [
@@ -244,7 +253,7 @@ await upsertCollection({
   ],
   indexes: ['CREATE INDEX idx_chatmsg_session ON chat_messages (session, created)'],
   ...OWNER_READ,
-  ...LOCKED,
+  ...OWNER_CREATE,
 });
 
 await upsertCollection({
@@ -263,7 +272,7 @@ await upsertCollection({
   ],
   indexes: ['CREATE INDEX idx_prop_user_status ON proposals (user, status, created)'],
   ...OWNER_READ,
-  ...LOCKED,
+  ...OWNER_CREATE,
 });
 
 // cleanup any probe collections from schema exploration

@@ -13,6 +13,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button, Card, Field, Icon, Loading, Screen, SectionTitle } from '@/components/ui';
 import { triggerSync } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { setLocalOrKey } from '@/lib/keystore';
 import { pb } from '@/lib/pb';
 import { useInvalidateMirrors, useSyncState } from '@/lib/queries';
 import { fontSize, layout, radius, spacing, type Palette, type ThemePreference } from '@/theme';
@@ -98,7 +99,12 @@ export default function SettingsScreen() {
       };
       // hidden fields are write-only: only send when the athlete typed one
       if (intervalsKey.trim()) patch.intervals_api_key = intervalsKey.trim();
-      if (orKey.trim()) patch.openrouter_api_key = orKey.trim();
+      if (orKey.trim()) {
+        patch.openrouter_api_key = orKey.trim();
+        // ADR-0006: also keep this device's copy so chat runs on-device;
+        // the PB hidden field stays for the worker fallback
+        await setLocalOrKey(orKey.trim());
+      }
       await pb.collection('users').update(user.id, patch);
       await refreshUser(); // reload the auth record into context
       setIntervalsKey('');
@@ -193,7 +199,7 @@ export default function SettingsScreen() {
           placeholder="Leave blank to keep the saved key"
           autoCapitalize="none"
           secureTextEntry
-          hint="BYO key — openrouter.ai/keys. The app never sees the key the worker uses."
+          hint="BYO key — openrouter.ai/keys. Saving also stores it on this device: chat runs on this device when the key is saved locally."
         />
         <View style={s.modelList} accessibilityLabel="Model picker">
           <Text style={s.fieldLabel}>Model</Text>

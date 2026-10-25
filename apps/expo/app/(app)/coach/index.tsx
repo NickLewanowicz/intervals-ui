@@ -11,6 +11,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,6 +25,8 @@ import { PressableScale, TypingDots } from '@/components/motion';
 import { Button, Icon, IconButton } from '@/components/ui';
 import { streamChat } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { getLocalOrKey } from '@/lib/keystore';
+import { streamChatDirect, type DirectChatDone, type DirectChatError } from '@/lib/local-chat';
 import { parseCoachMarkdown } from '@/lib/markdown';
 import { useChatMessages, useInvalidateMirrors, usePendingProposals } from '@/lib/queries';
 import type { Proposal } from '@/lib/records';
@@ -95,6 +98,34 @@ interface Bubble {
   streaming?: boolean;
 }
 
+/** Where chat turns run (ADR-0006): local key → on-device, else via server. */
+type Transport = 'device' | 'server';
+
+/**
+ * Muted transport chip for the header. Pressing re-checks the local key —
+ * the one user-visible trace of the hybrid transport (44px target).
+ */
+function TransportChip({ transport, onRecheck }: { transport: Transport; onRecheck: () => void }) {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const label = transport === 'device' ? 'on-device' : 'via server';
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Chat transport: ${label}. Tap to re-check.`}
+      onPress={onRecheck}
+      style={s.transportChip}
+    >
+      <Icon
+        name={transport === 'device' ? 'phone-portrait-outline' : 'cloud-outline'}
+        size={11}
+        color={colors.muted}
+      />
+      <Text style={s.transportText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 let nextId = 0;
 const bubbleId = () => `b${nextId++}`;
 
@@ -112,6 +143,7 @@ export default function CoachScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<Proposal | null>(null);
+  const [transport, setTransport] = useState<Transport>('server');
   const lastSent = useRef<string | null>(null);
 
   const history = useChatMessages(sessionId);
@@ -134,6 +166,21 @@ export default function CoachScreen() {
     scrollRef.current?.scrollToEnd?.({ animated: false });
   }, [messages]);
 
+  // initial transport guess from the local key; every send re-decides
+  useEffect(() => {
+    let cancelled = false;
+    void getLocalOrKey().then((k) => {
+      if (!cancelled) setTransport(k ? 'device' : 'server');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const recheckTransport = () => {
+    void getLocalOrKey().then((k) => setTransport(k ? 'device' : 'server'));
+  };
+
   const send = async (text: string) => {
     if (!text || sending) return;
     lastSent.current = text;
@@ -148,27 +195,53 @@ export default function CoachScreen() {
       { id: assistantId, role: 'assistant', content: '', streaming: true },
     ]);
 
+    // ADR-0006: local key → direct client→OpenRouter turn (which may still
+    // fall back to the worker pre-stream); no key → worker path, unchanged.
+    const localKey = await getLocalOrKey();
+    setTransport(localKey ? 'device' : 'server');
+
+    const onDelta = (t: string) =>
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + t } : m)),
+      );
+    const onProposal = (p: Proposal) => {
+      setModal(p);
+      void pending.refetch();
+    };
+    const handleDone = (d: { session_id?: string; proposal_errors?: Array<{ error: string }> } & Partial<DirectChatDone>) => {
+      if (d.usedFallback) setTransport('server');
+      if (d.session_id) setSessionId(d.session_id);
+      if (d.proposal_errors?.length) {
+        setError(`Coach proposed an invalid change: ${d.proposal_errors[0]!.error}`);
+      }
+    };
+    const handleError = (e: string | DirectChatError) => {
+      if (typeof e !== 'string' && e.usedFallback) setTransport('server');
+      setError(typeof e === 'string' ? e : e.message);
+    };
+
     try {
-      await streamChat({
-        sessionId: sessionId ?? undefined,
-        message: text,
-        model: user?.preferredModel || DEFAULT_MODEL_ID,
-        onDelta: (t) =>
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + t } : m)),
-          ),
-        onProposal: (p) => {
-          setModal(p);
-          void pending.refetch();
-        },
-        onDone: (d) => {
-          if (d.session_id) setSessionId(d.session_id);
-          if (d.proposal_errors?.length) {
-            setError(`Coach proposed an invalid change: ${d.proposal_errors[0]!.error}`);
-          }
-        },
-        onError: (msg) => setError(msg),
-      });
+      if (localKey) {
+        await streamChatDirect({
+          sessionId: sessionId ?? undefined,
+          message: text,
+          model: user?.preferredModel || DEFAULT_MODEL_ID,
+          onDelta,
+          onProposal,
+          onDone: handleDone as (d: DirectChatDone) => void,
+          onError: handleError,
+        });
+      } else {
+        await streamChat({
+          sessionId: sessionId ?? undefined,
+          message: text,
+          model: user?.preferredModel || DEFAULT_MODEL_ID,
+          onDelta,
+          onProposal,
+          onDone: handleDone,
+          onError: handleError as (msg: string) => void,
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Chat failed');
     } finally {
@@ -205,11 +278,14 @@ export default function CoachScreen() {
       <GlassBar edge="bottom" style={s.headerBar}>
         <View style={s.headerInner}>
           <Image source={COACH_AVATAR} style={s.avatar} accessibilityIgnoresInvertColors />
-          <View style={{ flex: 1 }}>
+          <View style={s.headerTitle}>
             <Text style={s.title}>Coach</Text>
-            <Text style={s.model} numberOfLines={1}>
-              {modelName}
-            </Text>
+            <View style={s.headerMeta}>
+              <Text style={s.model} numberOfLines={1}>
+                {modelName}
+              </Text>
+              <TransportChip transport={transport} onRecheck={recheckTransport} />
+            </View>
           </View>
           <Button title="New chat" variant="ghost" icon="add" onPress={newChat} />
         </View>
@@ -310,9 +386,28 @@ const styles = (p: Palette) =>
       alignItems: 'center',
       gap: spacing.md,
     },
+    headerTitle: { flex: 1, justifyContent: 'center' },
+    headerMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs + 2,
+      minHeight: layout.minTouch, // the transport chip is a 44px target
+    },
     avatar: { width: 40, height: 40, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: p.borderGlass },
     title: { color: p.text, fontSize: fontSize.body, fontWeight: '700' },
-    model: { color: p.muted, fontSize: fontSize.tiny, marginTop: 1 },
+    model: { color: p.muted, fontSize: fontSize.tiny, marginTop: 1, flexShrink: 1 },
+    transportChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.border,
+      backgroundColor: p.card,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    transportText: { color: p.muted, fontSize: fontSize.tiny, fontWeight: '600', letterSpacing: 0.3 },
     pendingNote: {
       alignSelf: 'center',
       width: '100%',
