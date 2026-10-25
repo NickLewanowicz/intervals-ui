@@ -11,6 +11,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassBar } from '@/components/glass';
 import { PressableScale } from '@/components/motion';
+import { Icon } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 import { usePendingProposals } from '@/lib/queries';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
@@ -57,7 +58,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               onPress={onPress}
               style={[s.tab, focused && [s.tabActive, { backgroundColor: colors.accent }]]}
             >
-              <Ionicons name={focused ? icons.on : icons.off} size={19} color={tint} />
+              <Icon name={focused ? icons.on : icons.off} size={19} color={tint} />
               <Text style={[s.tabLabel, { color: tint }]} numberOfLines={1}>
                 {label}
               </Text>

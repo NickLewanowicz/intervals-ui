@@ -8,6 +8,7 @@ import { listProposals, type SyncResult } from './api';
 import {
   calendarWindowFilter,
   chatMessagesFilter,
+  intervalsIdFilter,
   syncStateFilter,
   wellnessFilter,
 } from './filters';
@@ -20,6 +21,7 @@ export const queryKeys = {
   syncState: ['sync-state'] as const,
   chatMessages: (sessionId: string) => ['chat-messages', sessionId] as const,
   pendingProposals: ['pending-proposals'] as const,
+  mirroredEvent: (intervalsId: number) => ['mirrored-event', intervalsId] as const,
 };
 
 export interface CalendarWindow {
@@ -111,6 +113,28 @@ export function useChatMessages(sessionId: string | null): UseQueryResult<ChatMe
         created: String(r.created ?? ''),
       }));
     },
+  });
+}
+
+/**
+ * The mirror's current state of one upstream event — the "before" side of an
+ * update/delete proposal diff (persona finding #1). Null when the event is
+ * not in the mirror (the modal must never block approval on that).
+ */
+export function useMirroredEvent(intervalsId: number | null | undefined): UseQueryResult<EventEx | null> {
+  return useQuery({
+    queryKey: queryKeys.mirroredEvent(intervalsId ?? 0),
+    enabled: !!currentUserId() && intervalsId != null,
+    queryFn: async (): Promise<EventEx | null> => {
+      const user = currentUserId();
+      if (!user || intervalsId == null) return null;
+      const res = await pb
+        .collection('calendar_events')
+        .getList(1, 1, { filter: intervalsIdFilter(user, intervalsId) });
+      const row = res.items[0];
+      return row ? toEvent(row) : null;
+    },
+    staleTime: 30_000, // mirror state is stable while a proposal is being read
   });
 }
 

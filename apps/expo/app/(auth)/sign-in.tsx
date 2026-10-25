@@ -84,7 +84,9 @@ export default function SignInPage() {
 
         {Platform.OS === 'web' ? (
           <Link href="/" replace>
-            <Text style={s.back}>← Back</Text>
+            <View style={s.backHit}>
+              <Text style={s.back}>← Back</Text>
+            </View>
           </Link>
         ) : null}
       </View>
@@ -114,5 +116,14 @@ const styles = (p: Palette) =>
     title: { color: p.text, fontSize: fontSize.title, fontWeight: '700' },
     subtitle: { color: p.muted, fontSize: fontSize.body, marginTop: -spacing.sm },
     error: { color: p.danger, fontSize: fontSize.small },
-    back: { color: p.muted, fontSize: fontSize.small, textAlign: 'center', padding: spacing.sm },
+    // F17: the link's hit area is a real padded box (was padding on the Text,
+    // leaving a 343x16.5 anchor underfilling its own visual)
+    backHit: {
+      alignSelf: 'center',
+      minHeight: layout.minTouch,
+      paddingHorizontal: spacing.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    back: { color: p.muted, fontSize: fontSize.small, textAlign: 'center' },
   });

@@ -19,6 +19,14 @@ import {
 } from 'react-native';
 import { motion } from '@/theme';
 
+/**
+ * One animated node: the Pressable IS the layout box, the paint box AND the
+ * hit area (round-3 audit RC1 — a styled wrapper around a bare Pressable
+ * pinned children to the top and shrink-wrapped the hit area). The only style
+ * PressableScale adds is the press transform.
+ */
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 export function PressableScale({
   onPress,
   onPressIn,
@@ -47,26 +55,24 @@ export function PressableScale({
     }).start();
 
   return (
-    <Animated.View style={[style, { transform: [{ scale }] }]}>
-      <Pressable
-        accessibilityRole={accessibility.accessibilityRole ?? 'button'}
-        accessibilityLabel={accessibility.accessibilityLabel}
-        accessibilityHint={accessibility.accessibilityHint}
-        disabled={disabled}
-        onPress={onPress}
-        onPressIn={() => {
-          onPressIn?.();
-          springTo(disabled ? 1 : scaleTo);
-        }}
-        onPressOut={() => {
-          onPressOut?.();
-          springTo(1);
-        }}
-        style={styles.fill}
-      >
-        {children}
-      </Pressable>
-    </Animated.View>
+    <AnimatedPressable
+      accessibilityRole={accessibility.accessibilityRole ?? 'button'}
+      accessibilityLabel={accessibility.accessibilityLabel}
+      accessibilityHint={accessibility.accessibilityHint}
+      disabled={disabled}
+      onPress={onPress}
+      onPressIn={() => {
+        onPressIn?.();
+        springTo(disabled ? 1 : scaleTo);
+      }}
+      onPressOut={() => {
+        onPressOut?.();
+        springTo(1);
+      }}
+      style={[style, { transform: [{ scale }] }]}
+    >
+      {children}
+    </AnimatedPressable>
   );
 }
 
@@ -161,7 +167,6 @@ export function useReducedMotion(): boolean {
 }
 
 const styles = StyleSheet.create({
-  fill: { flexGrow: 1, flexShrink: 1 },
   dots: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingVertical: 6 },
   dot: { width: 7, height: 7, borderRadius: 4 },
 });

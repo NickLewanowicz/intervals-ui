@@ -142,3 +142,87 @@ before shipping any v3 prompt edit.
 - ✅ plan-10k-3weeks.json
 - ✅ race-plan.json
 - ✅ schedule-shakeout.json
+
+## 2026-10-25T03:11:00.249Z — z-ai/glm-5.3-flash (9 fixtures, FAILURES)
+- tokens: 53522 in / 2739 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ❌ update-not-delete.json: proposal update_event/ on 2026-10-31 MISSING
+
+## 2026-10-25T03:11:28.205Z — z-ai/glm-5.3-flash (9 fixtures, FAILURES)
+- tokens: 53522 in / 2624 out
+- ❌ fatigue-red-flag.json: mentions "easy"
+- ✅ feedback-week.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ❌ update-not-delete.json: proposal update_event/ on 2026-10-31 MISSING
+
+## 2026-10-25T03:12:05.029Z — z-ai/glm-5.3-flash (9 fixtures, FAILURES)
+- tokens: 53522 in / 2515 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ❌ update-not-delete.json: proposal update_event/ on 2026-10-31 MISSING
+
+## 2026-10-25T03:12:20.209Z — z-ai/glm-5.3-flash (9 fixtures, FAILURES)
+- tokens: 53522 in / 2629 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ❌ update-not-delete.json: proposal update_event/ on 2026-10-31 MISSING
+
+## 2026-10-25T03:13:05.067Z — z-ai/glm-5.3-flash (9 fixtures, FAILURES)
+- tokens: 53522 in / 2492 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ❌ update-not-delete.json: proposal update_event/ on 2026-10-31 MISSING
+
+## 2026-10-25T03:13:44.943Z — z-ai/glm-5.3-flash (9 fixtures, FAILURES)
+- tokens: 53522 in / 2475 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ❌ plan-10k-3weeks.json: proposal create_event/RACE_A on 2026-11-14 MISSING
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ✅ update-not-delete.json
+
+## 2026-10-25T03:14:09.288Z — z-ai/glm-5.3-flash (9 fixtures, ALL PASS)
+- tokens: 53522 in / 2780 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ✅ update-not-delete.json

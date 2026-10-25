@@ -14,7 +14,7 @@ import {
 } from '@intervals/core';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassBar, GlassCard } from '@/components/glass';
@@ -40,6 +40,9 @@ import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 import type { DayCell } from '@intervals/core';
 
+/** Host node type accepted by measureLayout (derived, no deep RN import). */
+type HostNode = Parameters<InstanceType<typeof View>['measureLayout']>[0];
+
 export default function CalendarScreen() {
   const { colors } = useTheme();
   const s = styles(colors);
@@ -59,6 +62,39 @@ export default function CalendarScreen() {
 
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  // persona finding #9: the daily loop must not start with a hunt for today.
+  // Scroll today's day card into view on mount / week change. Measured via
+  // measureLayout(card → scroll node) — onLayout alone is unreliable on web
+  // (offsetParent-relative), while measureLayout is exact on both platforms.
+  const scrollRef = useRef<ScrollView>(null);
+  const cardRefs = useRef(new Map<string, View | null>());
+  const weekDatesList = weekDates(weekStart);
+  const todayInWeek = weekDatesList.includes(today);
+  // layout bumps re-arm the effect until the measurement can act
+  const [measureTick, setMeasureTick] = useState(0);
+  const noteCardLayout = (date: string) => () => {
+    if (date === today) setMeasureTick((t) => t + 1);
+  };
+
+  useEffect(() => {
+    if (view !== 'week' || isLoading || isError || !todayInWeek) return;
+    const scroller = scrollRef.current;
+    const card = cardRefs.current.get(today);
+    if (!scroller || !card) return;
+    // the scroller's underlying scroll node (the RNW host div exposes it too)
+    const rel = scroller.getNativeScrollRef() ?? (scroller as unknown as HostNode);
+    card.measureLayout(
+      rel,
+      (_x, y) => {
+        // land the today card just under the top edge with a little air;
+        // the view clamps when today sits near the end of the week (no
+        // content below to fill the viewport) — the card still lands visible
+        scroller.scrollTo({ y: Math.max(0, y - spacing.md), animated: true });
+      },
+      () => undefined, // not laid out yet — the next layout tick retries
+    );
+  }, [view, weekStart, isLoading, isError, data, today, todayInWeek, measureTick]);
 
   const events = data?.events ?? [];
   const activities = data?.activities ?? [];
@@ -146,7 +182,7 @@ export default function CalendarScreen() {
             </Text>
             <IconButton icon="chevron-forward" label="Next" onPress={() => step(1)} />
             <View style={{ flex: 1 }} />
-            <Button title="Today" variant="ghost" onPress={goToday} style={s.todayBtn} />
+            <Button title="Today" variant="ghost" onPress={goToday} />
           </View>
           <View style={s.subRow}>
             <View style={s.segmented}>
@@ -173,7 +209,7 @@ export default function CalendarScreen() {
               accessibilityRole="button"
               accessibilityLabel="Sync status — open settings"
               onPress={() => router.push('/settings')}
-              hitSlop={6}
+              style={s.syncChip}
             >
               <Text style={s.syncFresh} numberOfLines={1}>
                 {lastSync ? `synced ${relativeTime(lastSync)}` : 'not synced yet'}
@@ -191,6 +227,7 @@ export default function CalendarScreen() {
 
       {/* scrolling body (FIX-2) */}
       <ScrollView
+        ref={scrollRef}
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -217,14 +254,21 @@ export default function CalendarScreen() {
             />
           ) : view === 'week' ? (
             <View style={s.days}>
-              {weekDates(weekStart).map((date) => (
-                <DayCard
+              {weekDatesList.map((date) => (
+                <View
                   key={date}
-                  date={date}
-                  cell={cells.get(date) ?? { date, events: [], activities: [] }}
-                  today={date === today}
-                  onOpen={goDay}
-                />
+                  ref={(v) => {
+                    cardRefs.current.set(date, v);
+                  }}
+                  onLayout={noteCardLayout(date)}
+                >
+                  <DayCard
+                    date={date}
+                    cell={cells.get(date) ?? { date, events: [], activities: [] }}
+                    today={date === today}
+                    onOpen={goDay}
+                  />
+                </View>
               ))}
             </View>
           ) : (
@@ -477,7 +521,6 @@ const styles = (p: Palette) =>
     headerBar: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2 },
     headerInner: { maxWidth: layout.maxW, width: '100%', alignSelf: 'center', gap: spacing.sm },
     navRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    todayBtn: { minHeight: 38, paddingHorizontal: spacing.md },
     subRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     title: {
       color: p.text,
@@ -502,9 +545,19 @@ const styles = (p: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
       minWidth: 64,
+      // +3px container padding top/bottom = 44px control height (round-3 audit F4)
+      minHeight: layout.minTouch - 6,
     },
     segText: { fontSize: fontSize.small, fontWeight: '600' },
-    syncFresh: { color: p.muted, fontSize: fontSize.tiny, marginRight: spacing.sm, flexShrink: 1 },
+    // F5: the chip is a real ≥44pt target (was a 13px Text + hitSlop)
+    syncChip: {
+      minHeight: layout.minTouch,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.xs,
+      marginRight: spacing.sm,
+    },
+    syncFresh: { color: p.muted, fontSize: fontSize.tiny, flexShrink: 1 },
     syncMsg: { color: p.muted, fontSize: fontSize.tiny, marginTop: spacing.xs },
     scroll: { flex: 1 },
     scrollContent: {

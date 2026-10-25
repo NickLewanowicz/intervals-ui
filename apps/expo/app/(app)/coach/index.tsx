@@ -6,8 +6,7 @@
  * educational footer (FIX-10) sits above it.
  */
 import { DEFAULT_MODEL_ID, resolveModel } from '@intervals/core';
-import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -17,13 +16,15 @@ import {
   Text,
   TextInput,
   View,
+  type TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassBar } from '@/components/glass';
 import { PressableScale, TypingDots } from '@/components/motion';
-import { Button, IconButton } from '@/components/ui';
+import { Button, Icon, IconButton } from '@/components/ui';
 import { streamChat } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { parseCoachMarkdown } from '@/lib/markdown';
 import { useChatMessages, useInvalidateMirrors, usePendingProposals } from '@/lib/queries';
 import type { Proposal } from '@/lib/records';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
@@ -31,6 +32,61 @@ import { useTheme } from '@/theme-context';
 import ProposalModal from '@/components/ProposalModal';
 
 const COACH_AVATAR = require('@/assets/coach-avatar.png');
+
+/**
+ * Coach replies arrive as light markdown (**bold**, "- " bullets). Round-5
+ * persona finding #5: render them instead of shipping literal asterisks.
+ * Minimal transform (src/lib/markdown.ts) — no markdown library.
+ */
+function MarkdownBubble({
+  text,
+  style,
+  streaming,
+}: {
+  text: string;
+  style: TextStyle;
+  streaming?: boolean;
+}) {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const lines = useMemo(() => parseCoachMarkdown(text), [text]);
+  // the streaming caret rides on the last rendered segment
+  let caretLine = -1;
+  lines.forEach((l, i) => {
+    if (l.segs.length > 0) caretLine = i;
+  });
+  return (
+    <View>
+      {lines.map((line, i) => {
+        if (line.kind === 'gap') return <View key={i} style={s.mdGap} />;
+        const caret = streaming && i === caretLine ? '▌' : '';
+        if (line.kind === 'bullet') {
+          return (
+            <View key={i} style={s.mdBulletRow}>
+              <Text style={[style, s.mdBulletGlyph]}>•</Text>
+              <Text style={[style, s.mdBulletText]}>
+                {line.segs.map((seg, j) => (
+                  <Text key={j} style={seg.bold ? s.mdBold : undefined}>
+                    {j === line.segs.length - 1 ? `${seg.text}${caret}` : seg.text}
+                  </Text>
+                ))}
+              </Text>
+            </View>
+          );
+        }
+        return (
+          <Text key={i} style={style}>
+            {line.segs.map((seg, j) => (
+              <Text key={j} style={seg.bold ? s.mdBold : undefined}>
+                {j === line.segs.length - 1 ? `${seg.text}${caret}` : seg.text}
+              </Text>
+            ))}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
 
 interface Bubble {
   id: string;
@@ -155,7 +211,7 @@ export default function CoachScreen() {
               {modelName}
             </Text>
           </View>
-          <Button title="New chat" variant="ghost" icon="add" onPress={newChat} style={s.newChat} />
+          <Button title="New chat" variant="ghost" icon="add" onPress={newChat} />
         </View>
       </GlassBar>
       {pendingError ? (
@@ -166,7 +222,7 @@ export default function CoachScreen() {
           style={s.pendingBar}
           onPress={() => setModal(pendingItems[0]!)}
         >
-          <Ionicons name="file-tray-full" size={16} color={colors.accentText} />
+          <Icon name="file-tray-full" size={16} color={colors.accentText} />
           <Text style={s.pendingText} numberOfLines={1}>
             {pendingItems.length} pending proposal{pendingItems.length > 1 ? 's' : ''} to review — tap to
             open
@@ -195,11 +251,10 @@ export default function CoachScreen() {
             >
               {m.streaming && !m.content ? (
                 <TypingDots color={colors.muted} />
+              ) : m.role === 'assistant' ? (
+                <MarkdownBubble text={m.content} style={s.bubbleText} streaming={m.streaming} />
               ) : (
-                <Text style={s.bubbleText}>
-                  {m.content}
-                  {m.streaming ? '▌' : ''}
-                </Text>
+                <Text style={s.bubbleText}>{m.content}</Text>
               )}
             </View>
           ))
@@ -209,7 +264,7 @@ export default function CoachScreen() {
             <Text style={s.errorText} numberOfLines={2}>
               {error}
             </Text>
-            <Button title="Retry" variant="danger" icon="refresh" onPress={retry} style={s.retryBtn} />
+            <Button title="Retry" variant="danger" icon="refresh" onPress={retry} />
           </View>
         ) : null}
       </ScrollView>
@@ -258,7 +313,6 @@ const styles = (p: Palette) =>
     avatar: { width: 40, height: 40, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: p.borderGlass },
     title: { color: p.text, fontSize: fontSize.body, fontWeight: '700' },
     model: { color: p.muted, fontSize: fontSize.tiny, marginTop: 1 },
-    newChat: { minHeight: 40, paddingHorizontal: spacing.md },
     pendingNote: {
       alignSelf: 'center',
       width: '100%',
@@ -282,7 +336,7 @@ const styles = (p: Palette) =>
       alignItems: 'center',
       gap: spacing.sm,
       paddingHorizontal: spacing.md,
-      minHeight: layout.minTouch - 4,
+      minHeight: layout.minTouch,
     },
     pendingText: { color: p.accentText, fontSize: fontSize.small, fontWeight: '600', flexShrink: 1 },
     list: { flex: 1 },
@@ -311,6 +365,11 @@ const styles = (p: Palette) =>
       borderColor: p.border,
     },
     bubbleText: { color: p.text, fontSize: fontSize.body, lineHeight: 21 },
+    mdGap: { height: spacing.xs },
+    mdBulletRow: { flexDirection: 'row', gap: spacing.sm },
+    mdBulletGlyph: { color: p.muted },
+    mdBulletText: { flexShrink: 1 },
+    mdBold: { fontWeight: '700' },
     errorRow: {
       alignSelf: 'stretch',
       flexDirection: 'row',
@@ -323,7 +382,6 @@ const styles = (p: Palette) =>
       padding: spacing.sm + 2,
     },
     errorText: { color: p.danger, fontSize: fontSize.small, flexShrink: 1 },
-    retryBtn: { minHeight: 40, paddingHorizontal: spacing.md },
     footer: {
       color: p.muted,
       fontSize: fontSize.tiny,

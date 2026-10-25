@@ -15,6 +15,7 @@ import {
   TextInput,
   View,
   type StyleProp,
+  type TextStyle,
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
@@ -24,6 +25,35 @@ import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/**
+ * Ionicons ink draws slightly high relative to text ink inside the same
+ * control (round-3 audit RC2) — measured 0.5-1px vs label ink centers, so
+ * the optical correction lives here ONCE, never per call-site.
+ */
+const ICON_NUDGE_EM = 0.06;
+
+/** Shared icon for interactive controls (buttons, toggles, tab items). */
+export function Icon({
+  name,
+  size,
+  color,
+  style,
+}: {
+  name: IconName;
+  size: number;
+  color: string;
+  style?: StyleProp<TextStyle>;
+}) {
+  return (
+    <Ionicons
+      name={name}
+      size={size}
+      color={color}
+      style={[{ transform: [{ translateY: size * ICON_NUDGE_EM }] }, style]}
+    />
+  );
+}
 
 /** Scrollable screen body. (FIX-2: tab scenes clip content, so every screen
  *  scrolls through THIS or its own ScrollView — never a plain View.) */
@@ -79,7 +109,7 @@ export function Button({
         <ActivityIndicator size="small" color={textColor} />
       ) : (
         <View style={s.buttonInner}>
-          {icon ? <Ionicons name={icon} size={17} color={textColor} /> : null}
+          {icon ? <Icon name={icon} size={17} color={textColor} /> : null}
           <Text style={[s.buttonText, { color: textColor }]}>{title}</Text>
         </View>
       )}
@@ -121,7 +151,7 @@ export function IconButton({
       {loading ? (
         <ActivityIndicator size="small" color={color} />
       ) : (
-        <Ionicons name={icon} size={size} color={color} />
+        <Icon name={icon} size={size} color={color} />
       )}
     </PressableScale>
   );
@@ -177,7 +207,7 @@ export function Field({
             style={s.eyeBtn}
             hitSlop={6}
           >
-            <Ionicons name={reveal ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.muted} />
+            <Icon name={reveal ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.muted} />
           </Pressable>
         ) : null}
       </View>

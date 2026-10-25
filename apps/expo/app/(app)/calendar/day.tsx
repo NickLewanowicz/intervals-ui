@@ -10,6 +10,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassCard } from '@/components/glass';
 import { Badge, Empty, ErrorBox, IconButton, Loading } from '@/components/ui';
+import WorkoutTimeline from '@/components/WorkoutTimeline';
 import { MONTHS, dayLabel, isValidISO, timeLabel, todayISO, weekdayIndex } from '@/lib/dates';
 import { activityLine, eventLine, zoneSecondsOf } from '@/lib/format';
 import { useCalendarWindow } from '@/lib/queries';
@@ -63,6 +64,10 @@ export default function DayScreen() {
           <>
             {events.map((e) => {
               const actual = activities.find((a) => a.paired_event_id === e.id);
+              // V-05: visualize planned training sessions (WORKOUT / RACE_*);
+              // notes/PLAN categories stay prose-only.
+              const training =
+                e.category == null || e.category === 'WORKOUT' || e.category.startsWith('RACE');
               return (
                 <GlassCard key={`e${e.id ?? e.start_date_local}`}>
                   <View style={s.rowBetween}>
@@ -74,6 +79,7 @@ export default function DayScreen() {
                   <Text style={s.meta}>
                     {[timeLabel(e.start_date_local), eventLine(e), e.type].filter(Boolean).join(' · ')}
                   </Text>
+                  {e.description && training ? <WorkoutTimeline description={e.description} /> : null}
                   {e.description ? <Text style={s.description}>{e.description}</Text> : null}
                   {actual ? <ActualBlock activity={actual} /> : null}
                 </GlassCard>

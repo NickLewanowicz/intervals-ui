@@ -32,6 +32,16 @@ describe('buildCoachSystemPrompt', () => {
     expect(prompt).toContain('Z2 Pace');
   });
 
+  it('v3: quote computed totals, plain-text replies, real newlines, prefer updates', () => {
+    expect(COACH_PROMPT_VERSION).toBeGreaterThanOrEqual(3);
+    expect(prompt).toContain('WEEK OF … TOTALS');
+    expect(prompt).toContain('never re-sum');
+    expect(prompt).toContain('no markdown asterisks');
+    expect(prompt).toContain('REAL NEWLINES');
+    expect(prompt).toContain('⏎'); // explicitly forbids the literal glyph
+    expect(prompt).toContain('prefer ONE update_event over a delete+create pair');
+  });
+
   it('v2 embeds the 80/20 knowledge base as the planning anchor', () => {
     expect(COACH_PROMPT_VERSION).toBeGreaterThanOrEqual(2);
     expect(prompt).toContain('80/20');

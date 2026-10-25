@@ -27,3 +27,8 @@ export function syncStateFilter(userId: string): string {
 export function chatMessagesFilter(sessionId: string): string {
   return `session = "${sessionId}"`;
 }
+
+/** The mirror row of one upstream event (proposal before/after diffs). */
+export function intervalsIdFilter(userId: string, intervalsId: number): string {
+  return `user = "${userId}" && intervals_id = "${intervalsId}"`;
+}

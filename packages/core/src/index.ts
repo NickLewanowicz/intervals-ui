@@ -4,3 +4,4 @@ export * from './stats';
 export * from './proposal';
 export * from './models';
 export * from './prompts/coach';
+export * from './workout-parse';

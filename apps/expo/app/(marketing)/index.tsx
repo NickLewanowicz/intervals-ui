@@ -17,7 +17,7 @@ import { ImageBackground, Platform, ScrollView, StyleSheet, Text, View } from 'r
 import { GlassCard } from '@/components/glass';
 import { PressableScale } from '@/components/motion';
 import { Button } from '@/components/ui';
-import { fontSize, intensity, lineHeight, radius, spacing, type Palette } from '@/theme';
+import { fontSize, intensity, layout, lineHeight, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 
 const BG_DARK = require('@/assets/bg-dark.jpg');
@@ -168,7 +168,12 @@ export default function MarketingPage() {
 
       {/* ── CTA + disclaimer ─────────────────────────────────────────────── */}
       <View style={s.footerCta}>
-        <PressableScale onPress={() => router.push('/sign-in')} accessibilityRole="button" accessibilityLabel="Start coaching">
+        <PressableScale
+          onPress={() => router.push('/sign-in')}
+          accessibilityRole="button"
+          accessibilityLabel="Start coaching"
+          style={s.footerCtaHit}
+        >
           <Text style={s.footerCtaText}>Ready? Your training, coached →</Text>
         </PressableScale>
       </View>
@@ -294,6 +299,13 @@ const styles = (p: Palette) =>
     stepTitle: { color: p.text, fontSize: fontSize.body, fontWeight: '600' },
     stepBody: { color: p.muted, fontSize: fontSize.small, lineHeight: 19, marginTop: 2 },
     footerCta: { marginTop: spacing.sm },
+    // F19: bare-text CTA had a 17.5px hit area — the control itself is the target
+    footerCtaHit: {
+      minHeight: layout.minTouch,
+      paddingHorizontal: spacing.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     footerCtaText: { color: p.accentText, fontSize: fontSize.body, fontWeight: '700' },
     disclaimer: {
       maxWidth: 560,

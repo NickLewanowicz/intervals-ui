@@ -9,8 +9,8 @@ import { DEFAULT_MODEL_ID, MODEL_ROSTER } from '@intervals/core';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, Field, Loading, Screen, SectionTitle } from '@/components/ui';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Button, Card, Field, Icon, Loading, Screen, SectionTitle } from '@/components/ui';
 import { triggerSync } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { pb } from '@/lib/pb';
@@ -25,6 +25,10 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; icon: React.
   { value: 'dark', label: 'Dark', icon: 'moon-outline' },
 ];
 
+/** Profile editor floor — ~6 rows at fontSize.body before it auto-grows. */
+const PROFILE_MIN_HEIGHT = 150;
+const PROFILE_MAX_CHARS = 4000;
+
 export default function SettingsScreen() {
   const { user, signOut, refreshUser } = useAuth();
   const { colors, preference, setPreference } = useTheme();
@@ -37,11 +41,15 @@ export default function SettingsScreen() {
   const [orKey, setOrKey] = useState('');
   const [model, setModel] = useState('');
   const [profile, setProfile] = useState('');
+  const [profileHeight, setProfileHeight] = useState(PROFILE_MIN_HEIGHT);
   const [units, setUnits] = useState<'km' | 'mi'>('km');
 
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<string | null>(null);
 
@@ -57,6 +65,25 @@ export default function SettingsScreen() {
 
   // FIX-7: an empty saved model MEANS the roster default — show it selected
   const effectiveModel = model || DEFAULT_MODEL_ID;
+
+  // persona finding #2: unsaved profile edits are visible, never silent
+  const profileDirty = profile !== (user.athleteProfile ?? '');
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    setProfileMsg(null);
+    setProfileError(null);
+    try {
+      // profile only — the page-bottom Save owns the other fields
+      await pb.collection('users').update(user.id, { athlete_profile: profile });
+      await refreshUser(); // reload the auth record → dirty dot clears
+      setProfileMsg('Profile saved.');
+    } catch (e) {
+      setProfileError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -197,15 +224,54 @@ export default function SettingsScreen() {
             );
           })}
         </View>
-        <Field
-          label="Athlete profile (given to the coach)"
+      </Card>
+
+      {/* Athlete profile — first-class editor card (persona finding #2): the
+          coach's system prompt deserves more than a clipped textarea with a
+          bottom-only Save. Auto-grows, counts chars, Save sits right here. */}
+      <SectionTitle>Athlete profile</SectionTitle>
+      <Card>
+        <View style={s.profileHead}>
+          <Text style={s.fieldLabel}>Given to the coach with every conversation</Text>
+          {profileDirty ? (
+            <View style={s.dirtyRow}>
+              <View style={s.dirtyDot} />
+              <Text style={s.dirtyText}>Edited — save to apply</Text>
+            </View>
+          ) : null}
+        </View>
+        <TextInput
+          accessibilityLabel="Athlete profile"
+          style={[s.profileInput, { height: Math.max(PROFILE_MIN_HEIGHT, profileHeight) }]}
           value={profile}
           onChangeText={setProfile}
+          onContentSizeChange={(e) => setProfileHeight(e.nativeEvent.contentSize.height)}
           placeholder={
             'Goals, current fitness, constraints…\ne.g. Marathon in 12 weeks; current fitness ~55; every Tuesday is run club.'
           }
+          placeholderTextColor={colors.muted}
           multiline
+          textAlignVertical="top"
+          maxLength={PROFILE_MAX_CHARS}
         />
+        <View style={s.profileMetaRow}>
+          <Text style={s.profileHint}>
+            Goals, goal times, preferences, constraints (physio protocols). The coach reads this every
+            conversation.
+          </Text>
+          <Text style={[s.charCount, profile.length >= PROFILE_MAX_CHARS - 100 && s.charCountWarn]}>
+            {profile.length} / {PROFILE_MAX_CHARS}
+          </Text>
+        </View>
+        <Button
+          title={savingProfile ? 'Saving…' : 'Save profile'}
+          icon="checkmark-outline"
+          onPress={() => void saveProfile()}
+          loading={savingProfile}
+          disabled={!profileDirty || savingProfile}
+        />
+        {profileMsg ? <Text style={s.saved}>{profileMsg}</Text> : null}
+        {profileError ? <Text style={s.error}>{profileError}</Text> : null}
       </Card>
 
       {/* Preferences */}
@@ -224,7 +290,7 @@ export default function SettingsScreen() {
                 onPress={() => setPreference(opt.value)}
                 style={[s.choiceBtn, selected && { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}
               >
-                <Ionicons
+                <Icon
                   name={opt.icon}
                   size={15}
                   color={selected ? colors.accentText : colors.muted}
@@ -305,7 +371,7 @@ const styles = (p: Palette) =>
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: p.border,
-      minHeight: layout.minTouch - 4,
+      minHeight: layout.minTouch,
     },
     modelRowSelected: { borderColor: p.accent, backgroundColor: p.accentSoft },
     radio: {
@@ -339,9 +405,49 @@ const styles = (p: Palette) =>
       justifyContent: 'center',
       flexDirection: 'row',
       gap: spacing.xs + 2,
-      minHeight: layout.minTouch - 4,
+      minHeight: layout.minTouch,
     },
     choiceText: { color: p.muted, fontSize: fontSize.small, fontWeight: '600' },
     saved: { color: p.success, fontSize: fontSize.small, textAlign: 'center' },
     error: { color: p.danger, fontSize: fontSize.small, textAlign: 'center' },
+    // athlete profile editor card (persona finding #2)
+    profileHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+      flexWrap: 'wrap',
+    },
+    dirtyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
+    dirtyDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: p.accent,
+    },
+    dirtyText: { color: p.accentText, fontSize: fontSize.tiny, fontWeight: '600' },
+    profileInput: {
+      backgroundColor: p.bg,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: p.border,
+      color: p.text,
+      fontSize: fontSize.body,
+      lineHeight: 21,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      minHeight: PROFILE_MIN_HEIGHT,
+    },
+    profileMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: spacing.md,
+    },
+    profileHint: { color: p.muted, fontSize: fontSize.tiny, flex: 1, lineHeight: 16 },
+    charCount: {
+      color: p.muted,
+      fontSize: fontSize.tiny,
+      fontVariant: ['tabular-nums'],
+    },
+    charCountWarn: { color: p.danger, fontWeight: '700' },
   });

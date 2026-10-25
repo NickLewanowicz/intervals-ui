@@ -142,9 +142,11 @@ for (const file of files) {
       (p) =>
         (!want.kind || p.kind === want.kind) &&
         (!want.category || p.payload.category === want.category) &&
-        (!want.date || p.payload.start_date_local?.startsWith(want.date)),
+        (!want.date || p.payload.start_date_local?.startsWith(want.date)) &&
+        // updates may omit start_date_local when unchanged — id is the contract
+        (want.id == null || p.payload.id === want.id),
     );
-    checks.push({ ok: !!match, label: `proposal ${want.kind ?? ''}/${want.category ?? ''}${want.date ? ' on ' + want.date : ''} ${match ? '✓' : 'MISSING'}` });
+    checks.push({ ok: !!match, label: `proposal ${want.kind ?? ''}/${want.category ?? ''}${want.date ? ' on ' + want.date : ''}${want.id != null ? ' id ' + want.id : ''} ${match ? '✓' : 'MISSING'}` });
     if (match && want.nameIncludes && !String(match.payload.name ?? '').toLowerCase().includes(want.nameIncludes.toLowerCase())) {
       checks.push({ ok: false, label: `name should include "${want.nameIncludes}", got "${match.payload.name}"` });
     }

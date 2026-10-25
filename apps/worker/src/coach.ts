@@ -2,7 +2,7 @@
  * Builds the coach's data digests from the PocketBase mirrors.
  * Pure functions — unit-tested; the LLM never sees raw JSON it doesn't need.
  */
-import { form, formatDuration, formatKm, formatPace, isRaceEvent } from '@intervals/core';
+import { form, formatDuration, formatKm, formatPace, isRaceEvent, weekKey } from '@intervals/core';
 import type { EventEx, Activity, WellnessDay, SportSettings } from '@intervals/core';
 
 export interface MirrorEvent extends Partial<EventEx> {
@@ -36,44 +36,96 @@ export function calendarDigest(
 
   const dates = [...byDate.keys()].sort();
   if (!dates.length) return '(calendar empty — no intervals.icu data synced yet)';
-  return dates
-    .map((date) => {
-      const { events, activities } = byDate.get(date)!;
-      const day = new Date(date + 'T12:00:00Z');
-      const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day.getUTCDay()];
-      const lines = [`${dow} ${date.slice(5)}:`];
-      for (const e of events) {
-        const race = isRaceEvent(e as EventEx) ? 'RACE' : (e.category ?? 'WORKOUT');
-        const planned = [
-          e.distance ? formatKm(e.distance) : null,
-          e.moving_time ? formatDuration(e.moving_time) : null,
-        ]
-          .filter(Boolean)
-          .join('/');
-        const done = activities.find(
-          (a) => a.paired_event_id != null && a.paired_event_id === e.id,
-        ) ?? activities.find((a) => localDate(a.start_date_local) === localDate(e.start_date_local));
-        const doneStr = done
-          ? ` · done ${done.distance ? formatKm(done.distance) : '?'}${done.moving_time ? '/' + formatDuration(done.moving_time) : ''}${done.icu_training_load ? ' load ' + Math.round(done.icu_training_load) : ''}`
-          : '';
-        lines.push(
-          `  #${e.intervals_id ?? e.id} ${e.name ?? '(untitled)'} · ${race} · planned ${planned || '—'}${e.icu_training_load ? ' load ' + Math.round(e.icu_training_load) : ''}${doneStr}`,
-        );
-        if (e.description) lines.push(`    ${e.description.replace(/\n/g, ' ⏎ ').slice(0, 220)}`);
-      }
-      for (const a of activities) {
-        const paired = events.some(
-          (e) => (e.intervals_id ?? e.id) === a.paired_event_id,
-        );
-        if (paired) continue;
-        lines.push(
-          `  (unplanned) ${a.name ?? a.type ?? 'Activity'} · done ${a.distance ? formatKm(a.distance) : '?'}${a.moving_time ? '/' + formatDuration(a.moving_time) : ''}${a.icu_training_load ? ' load ' + Math.round(a.icu_training_load) : ''}${a.race ? ' [RACE]' : ''}`,
-        );
-      }
-      if (lines.length === 1) lines.push('  (no entries)');
-      return lines.join('\n');
-    })
-    .join('\n');
+
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const weekTotals = new Map<
+    string,
+    { pd: number; pt: number; pl: number; ad: number; at: number; al: number }
+  >();
+  const bump = (week: string, kind: 'p' | 'a', d: number, t: number, l: number) => {
+    const w = weekTotals.get(week) ?? { pd: 0, pt: 0, pl: 0, ad: 0, at: 0, al: 0 };
+    if (kind === 'p') {
+      w.pd += d;
+      w.pt += t;
+      w.pl += l;
+    } else {
+      w.ad += d;
+      w.at += t;
+      w.al += l;
+    }
+    weekTotals.set(week, w);
+  };
+
+  const dayBlocks = dates.map((date) => {
+    const { events, activities } = byDate.get(date)!;
+    const week = weekKey(date);
+    for (const e of events) {
+      bump(week, 'p', num(e.distance), num(e.moving_time), num(e.icu_training_load));
+    }
+    for (const a of activities) {
+      bump(week, 'a', num(a.distance), num(a.moving_time), num(a.icu_training_load));
+    }
+    const day = new Date(date + 'T12:00:00Z');
+    const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day.getUTCDay()];
+    const lines = [`${dow} ${date.slice(5)}:`];
+    for (const e of events) {
+      const race = isRaceEvent(e as EventEx) ? 'RACE' : (e.category ?? 'WORKOUT');
+      const planned = [
+        e.distance ? formatKm(e.distance) : null,
+        e.moving_time ? formatDuration(e.moving_time) : null,
+      ]
+        .filter(Boolean)
+        .join('/');
+      const done = activities.find(
+        (a) => a.paired_event_id != null && a.paired_event_id === e.id,
+      ) ?? activities.find((a) => localDate(a.start_date_local) === localDate(e.start_date_local));
+      const doneStr = done
+        ? ` · done ${done.distance ? formatKm(done.distance) : '?'}${done.moving_time ? '/' + formatDuration(done.moving_time) : ''}${done.icu_training_load ? ' load ' + Math.round(done.icu_training_load) : ''}`
+        : '';
+      lines.push(
+        `  #${e.intervals_id ?? e.id} ${e.name ?? '(untitled)'} · ${race} · planned ${planned || '—'}${e.icu_training_load ? ' load ' + Math.round(e.icu_training_load) : ''}${doneStr}`,
+      );
+      if (e.description) lines.push(`    ${e.description.replace(/\n/g, ' | ').slice(0, 220)}`);
+    }
+    for (const a of activities) {
+      const paired = events.some(
+        (e) => (e.intervals_id ?? e.id) === a.paired_event_id,
+      );
+      if (paired) continue;
+      lines.push(
+        `  (unplanned) ${a.name ?? a.type ?? 'Activity'} · done ${a.distance ? formatKm(a.distance) : '?'}${a.moving_time ? '/' + formatDuration(a.moving_time) : ''}${a.icu_training_load ? ' load ' + Math.round(a.icu_training_load) : ''}${a.race ? ' [RACE]' : ''}`,
+      );
+    }
+    if (lines.length === 1) lines.push('  (no entries)');
+    return { week, text: lines.join('\n') };
+  });
+
+  // Insert a computed totals line after each Monday-week block — the model
+  // must quote these, never re-sum (its own arithmetic drifts; see eval log).
+  const out: string[] = [];
+  let lastWeek = '';
+  for (const block of dayBlocks) {
+    if (lastWeek && block.week !== lastWeek) {
+      const w = weekTotals.get(lastWeek);
+      if (w) out.push(weekTotalsLine(lastWeek, w));
+    }
+    out.push(block.text);
+    lastWeek = block.week;
+  }
+  const last = weekTotals.get(lastWeek);
+  if (last) out.push(weekTotalsLine(lastWeek, last));
+  return out.join('\n');
+}
+
+function weekTotalsLine(
+  week: string,
+  w: { pd: number; pt: number; pl: number; ad: number; at: number; al: number },
+): string {
+  const parts = [
+    `WEEK OF ${week} TOTALS (computed — quote these, do not re-sum): planned ${formatKm(w.pd)}/${formatDuration(w.pt)}/load ${Math.round(w.pl)}`,
+    `actual ${formatKm(w.ad)}/${formatDuration(w.at)}/load ${Math.round(w.al)}`,
+  ];
+  return parts.join(' · ');
 }
 
 export function wellnessDigest(days: MirrorWellness[]): string {
