@@ -1,8 +1,9 @@
 /**
  * THE core screen. Round-13 "week view v2" layout (design spec
  * docs/design/calendar-week-v2-spec.md) on the round-11 hero chassis:
- * - HeroCard (untouched): controls row + merged summary tiles + verdict +
- *   details drawer.
+ * - HeroCard (v4): controls row + the tappable tile strip — tapping any tile
+ *   opens the coach drill-down StatusSheet (coach bubble + gap + zones +
+ *   fitness + recovery). No verdict sentence, no drawer on the card itself.
  * - Week view: day-strip pills (Mon–Sun with recorded/planned/race/today
  *   markers — tap selects + scrolls the day into view), then one week sheet
  *   of titled DayCards (rollup chips) whose runs render as RunCards with
@@ -290,7 +291,7 @@ export default function CalendarScreen() {
   // only the window content scrolls in its own container, so the page itself
   // never scrolls. Desktop (>=900px) keeps the single scrolling page — unchanged.
   const heroBlock = (
-    /* ONE hero surface: controls + tile strip + verdict + drawer */
+    /* ONE hero surface: controls + the tile strip (tiles tap → status sheet) */
     <View>
       <HeroCard
         view={view}
@@ -516,7 +517,7 @@ export default function CalendarScreen() {
         </ScrollView>
       ) : (
         <>
-          {/* pinned hero: pills/verdict stay put; only the day rows scroll */}
+          {/* pinned hero: pills + tile strip stay put; only the day rows scroll */}
           <View style={[s.pinnedHead, { paddingTop: insets.top + spacing.sm + pageSpacing.navToContent }]}>
             <View style={s.pinnedInner}>{heroBlock}</View>
           </View>

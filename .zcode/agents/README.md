@@ -14,3 +14,8 @@ them inline in a session that shares this repo.
 The **Maintainer** (primary agent / orchestrator) owns scope, sequencing, and
 acceptance; it dispatches these personas and verifies their output against the
 Definition-of-done sections in each file.
+
+All screenshot captures from any persona route through the screenshot registry
+(`node tools/shot_registry.mjs capture …` — docs/TESTING.md "Screenshot
+registry"): timestamped + commit-stamped files, a machine-readable
+`index.jsonl`, and a `latest/` view anyone can watch for visual progress.

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { loadToHoldFlat, type ZoneBalance } from '@intervals/core';
 import type { Activity, EventEx, WellnessDay } from '@intervals/core';
 import {
-  buildVerdict,
+  coachStatusParagraph,
   fmtHours,
   formRingModel,
   formTileModel,
@@ -16,6 +17,7 @@ import {
   trendDir,
   weekHonesty,
   zoneFlagChips,
+  zoneStatusLine,
 } from '../stats-view';
 
 const ev = (over: Partial<EventEx>): EventEx => ({
@@ -68,36 +70,125 @@ describe('signedInt / trendDir / fmtHours', () => {
   });
 });
 
-describe('buildVerdict (spec §3 templates)', () => {
-  it('state · load with the spec wording and integer form', () => {
-    // planned week 266 at ctl 41.87/atl 43.38 → hold-flat 307
-    expect(buildVerdict(TREND, 266)).toBe(
-      'Form -2, steady · hold-flat ≈ 307/wk, you\'re at 266',
+describe('coachStatusParagraph (hero-v4 spec §1: the sheet coach bubble)', () => {
+  const FRESH = {
+    ...TREND,
+    ctl: 39.68,
+    atl: 34.68,
+    form: 5,
+    band: 'fresh' as const,
+    ctlDelta7: 2,
+    atlDelta7: 9,
+    formDelta7: -7,
+    detraining: false,
+  };
+  const FATIGUED = {
+    ...TREND,
+    ctl: 90,
+    atl: 102,
+    form: -12,
+    band: 'fatigued' as const,
+    ctlDelta7: 1,
+    atlDelta7: 8,
+    formDelta7: -7,
+    detraining: false,
+  };
+  const holdOf = (t: { ctl: number; atl: number }) => Math.round(loadToHoldFlat(t.ctl, t.atl));
+
+  it('fresh + loading over hold-flat (the spec-voice example shape)', () => {
+    const hold = holdOf(FRESH);
+    expect(hold).toBe(232); // fixture ctl/atl chosen to land on the spec's ≈232 (231.999)
+    const text = coachStatusParagraph({ trend: FRESH, plannedLoad: 297, actualLoad: 297 });
+    expect(text).toBe(
+      `You're at 297 of 297 planned load against a hold-flat of ≈${hold}/wk — you're loading more than you're shedding. Form is +5 (fresh) but trending down ~7/wk.`,
     );
   });
 
-  it('without planned load the verdict is state-only; without trend → null', () => {
-    expect(buildVerdict(TREND, 0)).toBe('Form -2, steady');
-    expect(buildVerdict(null, 266)).toBeNull();
-  });
-
-  it('detraining overrides the state clause (spec §1.3)', () => {
-    const t = { ...TREND, form: 2, detraining: true, ctlDelta7: -1.2 };
-    expect(buildVerdict(t, 0)).toBe(
-      'fresher, but fitness -1/wk — detraining, not a taper (est)',
+  it('fatigued + under hold-flat reads as a recovery shape', () => {
+    const hold = holdOf(FATIGUED);
+    const text = coachStatusParagraph({ trend: FATIGUED, plannedLoad: 150, actualLoad: 96 });
+    expect(text).toBe(
+      `You're at 96 of 150 planned load against a hold-flat of ≈${hold}/wk — the week sheds more than it loads. Form is -12 (fatigued) but trending down ~7/wk.`,
     );
   });
 
-  it('trend word follows the 7-day form delta', () => {
-    expect(buildVerdict({ ...TREND, formDelta7: -2.4 }, 0)).toBe('Form -2, trending down');
-    expect(buildVerdict({ ...TREND, formDelta7: 3 }, 0)).toBe('Form -2, trending up');
-    expect(buildVerdict({ ...TREND, formDelta7: null }, 0)).toBe('Form -2, steady');
+  it('steady form and a plan that matches hold-flat stay neutral', () => {
+    const text = coachStatusParagraph({ trend: { ...FRESH, formDelta7: 0.4 }, plannedLoad: holdOf(FRESH), actualLoad: 40 });
+    expect(text).toBe(
+      `You're at 40 of ${holdOf(FRESH)} planned load against a hold-flat of ≈${holdOf(FRESH)}/wk — roughly holding form flat. Form is +5 (fresh), steady.`,
+    );
   });
 
-  it('positive form keeps the explicit + sign (spec example: "Form +2")', () => {
-    expect(buildVerdict({ ...TREND, form: 2.4 }, 137)).toBe(
-      'Form +2, steady · hold-flat ≈ 307/wk, you\'re at 137',
+  it('detraining overrides the direction clause and keeps the (est) mark', () => {
+    const t = { ...FRESH, form: 2, detraining: true, ctlDelta7: -1.2 };
+    const text = coachStatusParagraph({ trend: t, plannedLoad: 0, actualLoad: 30 });
+    expect(text).toBe(
+      `You're at 30 load with nothing planned yet — hold-flat is ≈${holdOf(FRESH)}/wk. Form is +2 (fresh) but fitness is falling -1/wk — detraining, not a taper (est).`,
     );
+  });
+
+  it('no wellness data: loads still read, empty mirror gets the sync fallback', () => {
+    expect(coachStatusParagraph({ trend: null, plannedLoad: 266, actualLoad: 137 })).toBe(
+      "You're at 137 of 266 planned load this week.",
+    );
+    expect(coachStatusParagraph({ trend: null, plannedLoad: 0, actualLoad: 0 })).toBe(
+      'No wellness data yet — sync and your training status will show up here.',
+    );
+  });
+
+  it('nothing planned yet names the hold-flat so the number still exists', () => {
+    expect(coachStatusParagraph({ trend: FRESH, plannedLoad: 0, actualLoad: 0 })).toBe(
+      `Nothing is planned yet — hold-flat is ≈${holdOf(FRESH)}/wk. Form is +5 (fresh) but trending down ~7/wk.`,
+    );
+  });
+
+  it('worst zone flag appends one sentence; healthy or absent zones append none', () => {
+    const trap: ZoneBalance = {
+      lowPct: 45,
+      modPct: 40,
+      highPct: 15,
+      totalSecs: 3600,
+      lowFlag: 'red',
+      modFlag: 'red',
+      highFlag: 'healthy',
+      moderateTrap: true,
+    };
+    const text = coachStatusParagraph({ trend: FRESH, plannedLoad: 297, actualLoad: 297, zones: trap });
+    expect(text).toContain('Zone mix leans moderate — LOW 45% against a ~75-80% easy target.');
+    expect(text?.match(/\./g)?.length).toBe(3); // three sentences, not four
+
+    const healthy: ZoneBalance = { ...trap, lowPct: 80, modPct: 8, lowFlag: 'healthy', modFlag: 'healthy', moderateTrap: false };
+    const calm = coachStatusParagraph({ trend: FRESH, plannedLoad: 297, actualLoad: 297, zones: healthy });
+    expect(calm).not.toContain('Zone mix');
+    expect(coachStatusParagraph({ trend: FRESH, plannedLoad: 297, actualLoad: 297, zones: null })).not.toContain('Zone mix');
+  });
+});
+
+describe('zoneStatusLine (worst-flag priority for the coach bubble)', () => {
+  const base: ZoneBalance = {
+    lowPct: 80,
+    modPct: 8,
+    highPct: 12,
+    totalSecs: 3600,
+    lowFlag: 'healthy',
+    modFlag: 'healthy',
+    highFlag: 'healthy',
+    moderateTrap: false,
+  };
+
+  it('null / empty rollups are silent', () => {
+    expect(zoneStatusLine(null)).toBeNull();
+    expect(zoneStatusLine({ ...base, totalSecs: 0 })).toBeNull();
+    expect(zoneStatusLine(base)).toBeNull();
+  });
+
+  it('reds beat ambers; moderate trap reads as the LOW sentence', () => {
+    expect(zoneStatusLine({ ...base, lowFlag: 'red', moderateTrap: true })).toContain('moderate');
+    expect(zoneStatusLine({ ...base, modFlag: 'red' })).toContain('threshold-heavy');
+    expect(zoneStatusLine({ ...base, highFlag: 'red' })).toContain('over the 25% ceiling');
+    expect(zoneStatusLine({ ...base, lowFlag: 'amber' })).toContain('Easy work is drifting');
+    expect(zoneStatusLine({ ...base, modFlag: 'amber' })).toContain('drifting up');
+    expect(zoneStatusLine({ ...base, lowFlag: 'amber', modFlag: 'red' })).toContain('threshold-heavy');
   });
 });
 

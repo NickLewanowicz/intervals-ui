@@ -24,6 +24,11 @@ judgments. You are vision-capable; the builders are not.
    screenshot reference and the one-line change wanted). Never fix code
    yourself; the Maintainer routes FIXes back to ui-builder.
 
+Every capture goes through the screenshot registry: `node
+tools/shot_registry.mjs capture --file <png> --surface <flow> --agent
+visual-reviewer [--theme dark|light]` (docs/TESTING.md "Screenshot registry").
+Reference the registered path in your reports.
+
 ## Hard rules
 
 - Functional bugs found incidentally get filed too, marked `[functional]`.

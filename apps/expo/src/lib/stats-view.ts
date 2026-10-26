@@ -1,9 +1,11 @@
 /**
  * Pure view-model builders for the calendar hero card (metrics spec
  * docs/research/athlete-dashboard-metrics.md §3 + design spec
- * docs/design/calendar-home-v2-spec.md: metric tiles + verdict + tooltip
- * copy — no exposed prose, no bare text arrows). All number formatting +
- * text assembly lives here so it is unit-testable; components only render.
+ * docs/design/calendar-home-v2-spec.md: metric tiles + tooltip copy — no
+ * exposed prose on the card) and for the coach drill-down sheet
+ * (docs/design/calendar-hero-v4-spec.md: the deterministic coach status
+ * paragraph). All number formatting + text assembly lives here so it is
+ * unit-testable; components only render.
  *
  * Spec §0 conventions: load integers · distance 1dp · CTL/ATL 1dp ·
  * form/drift/percentages integers · projections marked (est) · load is never
@@ -250,22 +252,102 @@ export function fitnessTiles(trend: FitnessTrend): TileModel[] {
   return [ctl, atl];
 }
 
-/** One-line headline verdict from the spec §3 templates (state · load). */
-export function buildVerdict(trend: FitnessTrend | null, plannedWeekLoad: number): string | null {
-  if (!trend) return null;
-  const state = trend.detraining && trend.ctlDelta7 != null
-    ? `fresher, but fitness ${signedInt(trend.ctlDelta7)}/wk — detraining, not a taper (est)`
-    : `Form ${signedInt(trend.form)}, ${trendWord(trend.formDelta7)}`;
-  const load =
-    plannedWeekLoad > 0
-      ? `hold-flat ≈ ${Math.round(loadToHoldFlat(trend.ctl, trend.atl))}/wk, you're at ${Math.round(plannedWeekLoad)}`
-      : null;
-  return load ? `${state} · ${load}` : state;
+// ---------------------------------------------------------------------------
+// Coach drill-down bubble (calendar-hero-v4 spec §1): the deterministic 2-3
+// sentence status paragraph that replaced the card's verdict sentence. Same
+// pure inputs as the old verdict (trend + the live week's loads) plus the
+// weekly zone rollup. Numbers-first, no platitudes, no LLM call.
+// ---------------------------------------------------------------------------
+
+export interface CoachStatusInput {
+  /** Latest fitness trend (null = no usable wellness rows yet). */
+  trend: FitnessTrend | null;
+  /** Planned load for the CURRENT week (the hold-flat comparison). */
+  plannedLoad: number;
+  /** Actual load recorded so far in the CURRENT week. */
+  actualLoad: number;
+  /** Weekly zone rollup (week view only; omitted in month scope). */
+  zones?: ZoneBalance | null;
 }
 
-function trendWord(formDelta7: number | null): string {
-  if (formDelta7 == null || Math.abs(formDelta7) < 1) return 'steady';
-  return formDelta7 < 0 ? 'trending down' : 'trending up';
+/**
+ * The worst zone finding as one sentence; null when the week is healthy (or
+ * there is no zone data — month scope). Priority: moderate trap / LOW red →
+ * MOD red → HIGH red → ambers.
+ */
+export function zoneStatusLine(zones?: ZoneBalance | null): string | null {
+  if (!zones || zones.totalSecs <= 0) return null;
+  if (zones.moderateTrap || zones.lowFlag === 'red')
+    return `Zone mix leans moderate — LOW ${zones.lowPct}% against a ~75-80% easy target.`;
+  if (zones.modFlag === 'red') return `Z3/SS is ${zones.modPct}% of the week — threshold-heavy.`;
+  if (zones.highFlag === 'red') return `Hard work is ${zones.highPct}% of the week, over the 25% ceiling.`;
+  if (zones.lowFlag === 'amber') return `Easy work is drifting — LOW ${zones.lowPct}% (target ~75-80%).`;
+  if (zones.modFlag === 'amber') return `Moderate work is drifting up — ${zones.modPct}% of the week.`;
+  return null;
+}
+
+/**
+ * The coach bubble paragraph (calendar-hero-v4 spec §1): load vs hold-flat →
+ * form + direction → worst zone finding. Deterministic from the same stats
+ * the tiles show; hold-flat keeps its ≈ estimate mark, detraining its (est).
+ */
+export function coachStatusParagraph({
+  trend,
+  plannedLoad,
+  actualLoad,
+  zones,
+}: CoachStatusInput): string | null {
+  const sentences: string[] = [];
+
+  // 1 — load vs hold-flat: the steering read.
+  const hold = trend != null ? Math.round(loadToHoldFlat(trend.ctl, trend.atl)) : null;
+  if (hold != null) {
+    if (plannedLoad > 0) {
+      const planned = Math.round(plannedLoad);
+      const clause =
+        planned > hold + 2
+          ? "you're loading more than you're shedding"
+          : planned < hold - 2
+            ? 'the week sheds more than it loads'
+            : 'roughly holding form flat';
+      sentences.push(
+        `You're at ${Math.round(actualLoad)} of ${planned} planned load against a hold-flat of ≈${hold}/wk — ${clause}.`,
+      );
+    } else if (actualLoad > 0) {
+      sentences.push(
+        `You're at ${Math.round(actualLoad)} load with nothing planned yet — hold-flat is ≈${hold}/wk.`,
+      );
+    } else {
+      sentences.push(`Nothing is planned yet — hold-flat is ≈${hold}/wk.`);
+    }
+  } else if (plannedLoad > 0 || actualLoad > 0) {
+    sentences.push(`You're at ${Math.round(actualLoad)} of ${Math.round(plannedLoad)} planned load this week.`);
+  }
+
+  // 2 — form: signed value + band word + weekly direction (detraining wins).
+  if (trend) {
+    if (trend.detraining && trend.ctlDelta7 != null) {
+      sentences.push(
+        `Form is ${signedInt(trend.form)} (${FORM_BAND_WORD[trend.band]}) but fitness is falling ${signedInt(trend.ctlDelta7)}/wk — detraining, not a taper (est).`,
+      );
+    } else {
+      const d = trend.formDelta7;
+      const dir =
+        d == null || Math.abs(d) < 1
+          ? ', steady'
+          : d < 0
+            ? ` but trending down ~${Math.abs(Math.round(d))}/wk`
+            : ` and trending up ~${Math.round(d)}/wk`;
+      sentences.push(`Form is ${signedInt(trend.form)} (${FORM_BAND_WORD[trend.band]})${dir}.`);
+    }
+  }
+
+  // 3 — the worst zone finding (week view only).
+  const zoneLine = zoneStatusLine(zones);
+  if (zoneLine) sentences.push(zoneLine);
+
+  if (sentences.length > 0) return sentences.join(' ');
+  return 'No wellness data yet — sync and your training status will show up here.';
 }
 
 export interface GapModel {

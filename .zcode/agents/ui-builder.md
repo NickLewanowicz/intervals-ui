@@ -38,5 +38,7 @@ You are **ui-builder**, the implementation agent for the intervals coach app
 - Route renders on web AND the logic is native-safe (no DOM-only APIs).
 - Loading / empty / error states handled.
 - Tests for new pure logic pass; typecheck passes.
-- Screenshots of the result saved under `qa-screenshots/<issue-slug>/` for the
-  visual reviewer (use the playwright browser on the web export).
+- Screenshots of the result REGISTERED via
+  `node tools/shot_registry.mjs capture --file <png> --surface <flow> --agent ui-builder`
+  (see docs/TESTING.md "Screenshot registry") — never hand-placed under
+  `qa-screenshots/`.

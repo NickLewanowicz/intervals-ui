@@ -126,3 +126,38 @@ cd apps/expo/ios && xcodebuild \
   TEST race → `node .scratch/r16-mirror.mjs clean` (verify 0 remaining).
 - Device (non-simulator) builds additionally need App Group provisioning —
   out of scope for the simulator QA chain above.
+
+## Screenshot registry
+
+All agent captures route through `tools/shot_registry.mjs` (node stdlib only).
+One command in, everything else is derived: a browsable per-date/per-commit
+tree, metadata stamped INTO the PNG (tEXt chunks — survive copies), a sidecar
+json, an append-only machine index, and a `latest/` view of the most recent
+state per agent+surface. `qa-screenshots/` is gitignored, so this is a local
+observation surface — watch the folder to see visual progress across agents
+and flows, and jump in when something looks wrong.
+
+```sh
+node tools/shot_registry.mjs capture --file <png> --surface calendar --agent visual-reviewer \
+     [--platform web|android|ios] [--theme dark|light] [--width N] [--note "..."] [--move]
+node tools/shot_registry.mjs index [--agent X] [--surface Y] [--since <iso-ts|2h|3d>]
+node tools/shot_registry.mjs read --file <png>   # parse the tEXt stamp back out
+```
+
+Folder layout (defaults: platform `web`, theme `dark` — the app is dark-first):
+
+```
+qa-screenshots/registry/
+  <YYYY-MM-DD>/<sha-short>/<agent>/<surface>-<theme>-<platform>-<HHMMSS>.png
+                                                    ^ sidecar: same + .json
+  latest/<agent>/<surface>-<theme>-<platform>.png   # overwritten "current state" copy
+  index.jsonl                                       # {ts, sha, agent, surface, platform, theme, path, w, h, bytes, note}
+```
+
+Each PNG carries tEXt chunks `Author` (agent), `Surface`, `Commit`, `Theme`,
+`Platform`, `TimestampISO`, `Width`, `Height`, `Note` — the `read` command
+parses them back (pngcheck isn't installed); the sidecar json additionally
+records git dirty state at capture time. Convention for agents: **every
+capture goes through the registry** — take the shot anywhere (simctl,
+playwright, adb screencap), then hand the file to `capture`. Never rename or
+hand-place PNGs under `qa-screenshots/`; ad-hoc `round-*` folders are legacy.

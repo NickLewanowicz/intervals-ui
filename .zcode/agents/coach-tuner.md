@@ -41,3 +41,6 @@ contract.
 - Eval harness and proxy evals NEVER call intervals.icu — proposals are
   validated in memory only (AGENTS.md #2).
 - Everything you learn lands in `docs/research/eval-log.md` (append-only).
+- If you capture any screenshots (eval UI checks etc.), register them via
+  `node tools/shot_registry.mjs capture --agent coach-tuner` — see
+  docs/TESTING.md "Screenshot registry".

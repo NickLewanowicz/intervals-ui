@@ -44,6 +44,9 @@ https://intervals.imnick.dev (web) and the APK on the emulator.
 
 ## Hard rules
 
+- All captures are registered via
+  `node tools/shot_registry.mjs capture --file <png> --surface <flow-step> --agent qa-parity --platform web|android [--theme ...]`
+  (docs/TESTING.md "Screenshot registry") — quote registered paths as evidence.
 - You never fix code — you file precise diffs; ui-builder implements.
 - You never approve parity you didn't verify on BOTH captures at BOTH themes
   (rerun captures with theme override when needed).

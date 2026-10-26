@@ -1,16 +1,16 @@
 /**
- * Hero card v3 (design spec docs/design/calendar-home-v2-spec.md) — the top
- * nav and the week summary merged into ONE glass surface:
+ * Hero card v4 (design spec docs/design/calendar-hero-v4-spec.md) — the top
+ * nav and the week summary as ONE glass surface:
  * - Row 1 controls: range nav + Today, segmented week/month, sync. Side
  *   padding 14 so nothing hugs the 24px pill corners (the cramped-corner fix).
  * - Row 2: small-caps scope label + sync chip, then the tile strip
- *   (Distance / Time / Load / Form-ring mini) — 2×2 mobile, 4-across wide,
- *   internal hairlines, no nested cards.
- * - Verdict sentence (the hero's single line of prose) below the tiles.
- * - "Details" drawer: fitness CTL/ATL mini-tiles, zone bar + flagged chips
- *   (sentences live in hover/press tooltips), the gap as three stat chips
- *   with an info-i definition, recovery mini-tiles. Zero exposed prose
- *   paragraphs, no bare text arrows.
+ *   (Distance / Time / Load / Form-ring mini) — 2×2 mobile, 4-across wide.
+ *   NO hairlines between tiles (v4: the wrapped verdict sentence used to
+ *   push the grid and orphan the separators) — plain columns, spacing only.
+ * - EVERY tile is tappable (v4): tapping any tile opens the coach drill-down
+ *   StatusSheet (the DetailSheet chassis) with the coach bubble, the Gap,
+ *   zone balance, fitness and recovery. The verdict sentence and the Details
+ *   drawer are gone from the card — the tiles are the entry point.
  *
  * All numbers/text come from pure builders in `@/lib/stats-view` +
  * `@intervals/core`. Estimates keep their ≈; load is never fabricated.
@@ -23,7 +23,6 @@ import {
   type EventEx,
   type WellnessDay,
 } from '@intervals/core';
-import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
   Pressable,
@@ -34,11 +33,10 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { GlassBar } from '@/components/glass';
-import { Hint, InfoHint } from '@/components/Hint';
+import { InfoHint } from '@/components/Hint';
 import { IconButton, StatTile } from '@/components/ui';
 import {
-  buildVerdict,
-  fitnessTiles,
+  coachStatusParagraph,
   formTileModel,
   gapCopy,
   gapModel,
@@ -48,18 +46,16 @@ import {
   tileHints,
   weekHonesty,
   zoneFlagChips,
-  type FlagChipModel,
   type FormTileModel,
   type TileTone,
 } from '@/lib/stats-view';
+import StatusSheet, { type StatusSheetContent } from './StatusSheet';
 import { FormRing } from './FormRing';
 import {
   fontSize,
   layout,
-  lineHeight,
   radius,
   spacing,
-  zoneColor,
   type Palette,
 } from '@/theme';
 import { useTheme } from '@/theme-context';
@@ -112,7 +108,7 @@ export interface HeroCardProps {
    * the range title can never ellipsize). Desktop omits it — title stays.
    */
   pills?: React.ReactNode;
-  /** The CURRENT calendar week — verdict + gap are always about this week. */
+  /** The CURRENT calendar week — coach read + gap are always about this week. */
   currentWeek: {
     events: EventEx[];
     activities: Activity[];
@@ -148,7 +144,9 @@ export default function HeroCard({
   /** Mobile hero anatomy (round 19): freshness + sync live on the label row so
    *  the controls row gives the range title full width (no date ellipsis). */
   const compact = !wide;
-  const [open, setOpen] = useState(false);
+  /** v4: ANY tile tap opens the coach drill-down sheet (both scopes). */
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const openSheet = () => setSheetOpen(true);
 
   const trend = useMemo(
     () => (wellnessLoading ? null : fitnessTrend(wellness)),
@@ -158,7 +156,10 @@ export default function HeroCard({
     () => currentWeek.events.reduce((acc, e) => acc + (e.icu_training_load ?? 0), 0),
     [currentWeek.events],
   );
-  const verdict = useMemo(() => buildVerdict(trend, plannedWeekLoad), [trend, plannedWeekLoad]);
+  const actualWeekLoad = useMemo(
+    () => currentWeek.activities.reduce((acc, a) => acc + (a.icu_training_load ?? 0), 0),
+    [currentWeek.activities],
+  );
   const honesty = useMemo(
     () => weekHonesty(currentWeek.events, currentWeek.activities, mondayOf(today), today),
     [currentWeek.events, currentWeek.activities, today],
@@ -202,8 +203,15 @@ export default function HeroCard({
     [gap, currentWeek.horizonLabel, honesty],
   );
   const recoveryTilesList = useMemo(() => recoveryTiles(recovery), [recovery]);
-
-  const hasDetails = trend != null || (zones != null && zones.totalSecs > 0) || gap != null || recoveryTilesList.length > 0;
+  const coachText = useMemo(
+    // the coach read is always about the LIVE week (never the viewed window)
+    () => coachStatusParagraph({ trend, plannedLoad: plannedWeekLoad, actualLoad: actualWeekLoad, zones }),
+    [trend, plannedWeekLoad, actualWeekLoad, zones],
+  );
+  const sheetContent: StatusSheetContent = useMemo(
+    () => ({ coachText, trend, zones, zoneChips, gapInfo, recoveryTilesList }),
+    [coachText, trend, zones, zoneChips, gapInfo, recoveryTilesList],
+  );
 
   return (
     <GlassBar edge="none" floating style={s.hero} testID="hero-card">
@@ -323,159 +331,93 @@ export default function HeroCard({
           </>
         ) : null}
       </View>
-            {/* The hero's single sentence — the most important read, kept first. */}
-      {verdict ? (
-        <Text
-          accessibilityRole="text"
-          style={[s.verdict, s.verdictStrong, trend?.detraining && { color: colors.danger }]}
-        >
-          {verdict}
-        </Text>
-      ) : null}
 
-<View style={s.tilesRow}>
+      {/* The tile strip IS the entry point (v4): no verdict sentence, no
+          drawer — tap any tile for the coach drill-down. */}
+      <View style={s.tilesRow}>
         {strip.map((tile, i) => (
-          <View key={tile.id} style={cellStyle(i, wide, colors.border)}>
-            <StatTile
-              label={tile.label}
-              value={tile.value}
-              valueTone={tile.valueTone}
-              sub={tile.sub}
-              hint={hints[tile.id] ?? undefined}
-              size={wide ? 'lg' : 'sm'}
-              testID={`tile-${tile.id}`}
-            />
+          <View key={tile.id} style={cellStyle(i, wide)}>
+            <TileButton label={tile.label} onPress={openSheet}>
+              <StatTile
+                label={tile.label}
+                value={tile.value}
+                valueTone={tile.valueTone}
+                sub={tile.sub}
+                hint={hints[tile.id] ?? undefined}
+                size={wide ? 'lg' : 'sm'}
+                testID={`tile-${tile.id}`}
+              />
+            </TileButton>
           </View>
         ))}
-        <View style={cellStyle(strip.length, wide, colors.border)}>
-          <FormCell model={formTile} compact={!wide} />
+        <View style={cellStyle(strip.length, wide)}>
+          <TileButton label="Form" onPress={openSheet}>
+            <FormCell model={formTile} compact={!wide} />
+          </TileButton>
         </View>
       </View>
 
-      {/* The hero's single sentence (design spec §3) — everything it used to
-          duplicate lives in the tiles above and the drawer below. */}
-      {/* SECONDARY — the "what it means" drawer */}
-      {hasDetails ? (
-        <View style={s.detailsWrap}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={open ? { expanded: true } : { expanded: false }}
-            accessibilityLabel={open ? 'Collapse details' : 'Expand details'}
-            onPress={() => setOpen((v) => !v)}
-            hitSlop={6}
-            style={s.disclosure}
-          >
-            <Text style={s.disclosureText}>Details</Text>
-            <Ionicons
-              name={open ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={colors.muted}
-            />
-          </Pressable>
-
-          {open ? (
-            <View style={s.details}>
-              {/* Fitness — two mini-tiles with delta chips (design spec §4) */}
-              {trend ? (
-                <DetailBlock label="Fitness">
-                  <View style={s.miniRow}>
-                    {fitnessTiles(trend).map((tile) => (
-                      <StatTile key={tile.id} size="sm" {...tile} style={s.miniTile} />
-                    ))}
-                  </View>
-                </DetailBlock>
-              ) : null}
-
-              {/* Zone balance — bar + flagged chips, sentences in tooltips */}
-              {zoneChips.length > 0 ? (
-                <DetailBlock label="Zones this week">
-                  <View style={s.zoneBar}>
-                    <View
-                      style={{ flexGrow: Math.max(zones!.lowPct, 1), backgroundColor: zoneColor(colors, 'Z2') }}
-                    />
-                    <View
-                      style={{ flexGrow: Math.max(zones!.modPct, 1), backgroundColor: zoneColor(colors, 'Z3') }}
-                    />
-                    <View
-                      style={{ flexGrow: Math.max(zones!.highPct, 1), backgroundColor: zoneColor(colors, 'Z5') }}
-                    />
-                  </View>
-                  <View style={s.chipRow}>
-                    {zoneChips.map((chip) => (
-                      <FlagChip key={chip.id} chip={chip} />
-                    ))}
-                  </View>
-                </DetailBlock>
-              ) : null}
-
-              {/* The gap — three stat chips, definition in the info tooltip */}
-              {gapInfo ? (
-                <DetailBlock
-                  label="The gap"
-                  hint={gapInfo.tooltip.join(' ')}
-                >
-                  <View style={s.miniRow}>
-                    {gapInfo.chips.map((c) => (
-                      <StatTile
-                        key={c.id}
-                        size="sm"
-                        label={c.label}
-                        value={c.value}
-                        valueTone={c.tone === 'worse' ? 'worse' : undefined}
-                        style={s.miniTile}
-                        testID={`gap-${c.id}`}
-                      />
-                    ))}
-                  </View>
-                </DetailBlock>
-              ) : null}
-
-              {/* Recovery — three mini-tiles with delta chips */}
-              {recoveryTilesList.length > 0 ? (
-                <DetailBlock label="Recovery · 7-day">
-                  <View style={s.miniRow}>
-                    {recoveryTilesList.map((tile) => (
-                      <StatTile key={tile.id} size="sm" {...tile} style={s.miniTile} />
-                    ))}
-                  </View>
-                </DetailBlock>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
+      {/* Coach drill-down: the old Details drawer content + the coach bubble
+          lead, on the day-sheet chassis. Fine at both widths for v4. */}
+      {sheetOpen ? (
+        <StatusSheet content={sheetContent} onClose={() => setSheetOpen(false)} />
       ) : null}
     </GlassBar>
   );
 }
 
-/** Grid cell wrappers with internal hairlines (no nested-card borders). */
-function cellStyle(i: number, wide: boolean, borderColor: string): ViewStyle {
+/** Grid cell wrappers — plain columns, spacing only (v4 killed the per-tile
+ *  hairlines: the wrapped verdict used to push the grid and orphan them). */
+function cellStyle(i: number, wide: boolean): ViewStyle {
   const style: ViewStyle = { flexShrink: 1, minWidth: 0 };
   if (wide) {
     style.flex = 1;
     if (i > 0) {
-      style.borderLeftWidth = StyleSheet.hairlineWidth;
-      style.borderLeftColor = borderColor;
       style.paddingLeft = spacing.md;
     }
     return style;
   }
-  // 2×2 grid: half-width cells, vertical hairline between columns, horizontal
-  // hairline between rows.
+  // 2×2 grid: half-width cells, spacing between columns and rows.
   style.width = '50%';
   if (i % 2 === 1) {
-    style.borderLeftWidth = StyleSheet.hairlineWidth;
-    style.borderLeftColor = borderColor;
     style.paddingLeft = spacing.md;
   } else {
     style.paddingRight = spacing.sm;
   }
   if (i >= 2) {
-    style.borderTopWidth = StyleSheet.hairlineWidth;
-    style.borderTopColor = borderColor;
     style.paddingTop = spacing.sm + 2;
   }
   return style;
+}
+
+/**
+ * The v4 tile press wrapper: the WHOLE tile is the tap target (≥44px tall,
+ * pressed dim) and opens the coach drill-down. The InfoHint inside still wins
+ * the gesture negotiation (deepest-first), so tooltips keep working.
+ */
+function TileButton({
+  label,
+  onPress,
+  children,
+}: {
+  label: string;
+  onPress: () => void;
+  children: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open training status — ${label}`}
+      accessibilityHint="Opens the coach drill-down"
+      onPress={onPress}
+      style={({ pressed }) => [s.tileBtn, pressed && s.tileBtnPressed]}
+      testID={`tile-press-${label.toLowerCase()}`}
+    >
+      {children}
+    </Pressable>
+  );
 }
 
 /** The FORM tile: mini ring + big signed value + band-word chip. */
@@ -516,46 +458,6 @@ function FormCell({ model, compact = false }: { model: FormTileModel; compact?: 
           {model.sub.text}
         </Text>
       ) : null}
-    </View>
-  );
-}
-
-/** Flagged zone chip: label + warning icon when flagged; tooltip = sentence. */
-function FlagChip({ chip }: { chip: FlagChipModel }) {
-  const { colors } = useTheme();
-  const s = styles(colors);
-  const tone =
-    chip.tone === 'red' ? colors.danger : chip.tone === 'amber' ? colors.mutedStrong : colors.muted;
-  return (
-    <Hint content={chip.detail} label={`${chip.label} — what this means`}>
-      <View style={[s.flagChip, chip.tone !== 'neutral' && { borderColor: tone }]}>
-        {chip.tone !== 'neutral' ? (
-          <Ionicons name="warning" size={10} color={tone} />
-        ) : null}
-        <Text style={[s.flagChipText, { color: tone }]}>{chip.label}</Text>
-      </View>
-    </Hint>
-  );
-}
-
-function DetailBlock({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  const { colors } = useTheme();
-  const s = styles(colors);
-  return (
-    <View style={s.detailBlock}>
-      <View style={s.detailLabelRow}>
-        <Text style={s.detailLabel}>{label}</Text>
-        {hint ? <InfoHint content={hint} label={`About ${label.toLowerCase()}`} /> : null}
-      </View>
-      {children}
     </View>
   );
 }
@@ -652,10 +554,17 @@ const styles = (p: Palette) =>
       textTransform: 'uppercase',
     },
     freshness: { color: p.muted, fontSize: fontSize.tiny, fontVariant: ['tabular-nums'] },
-    // --- tile strip: internal hairlines between cells ---
+    // --- tile strip: plain columns, spacing does the grouping (v4) ---
     tilesRow: { flexDirection: 'row' },
-    tilesGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-    tileCell: { flexShrink: 1, minWidth: 0 },
+    tileBtn: {
+      // expand the touch target past the tile without shifting the grid
+      padding: spacing.xs,
+      margin: -spacing.xs,
+      minHeight: layout.minTouch,
+      justifyContent: 'center',
+      borderRadius: radius.sm,
+    },
+    tileBtnPressed: { opacity: 0.55 },
     tile: { gap: 2, flexShrink: 1, minWidth: 0 },
     tileLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     tileLabel: {
@@ -668,68 +577,4 @@ const styles = (p: Palette) =>
     formValueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     formValue: { fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'] },
     tileSubText: { fontSize: fontSize.tiny + 1, fontWeight: '600', fontVariant: ['tabular-nums'] },
-    verdict: {
-      color: p.mutedStrong,
-      fontSize: fontSize.small,
-      lineHeight: lineHeight.small + 2,
-      fontWeight: '600',
-      fontVariant: ['tabular-nums'],
-    },
-    // promoted above the tiles — the primary read of the card
-    verdictStrong: {
-      color: p.text,
-      fontSize: fontSize.body,
-      lineHeight: lineHeight.body,
-      fontWeight: '700',
-    },
-    // --- details drawer ---
-    detailsWrap: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: p.border,
-      paddingTop: spacing.xs,
-    },
-    disclosure: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.xs,
-      minHeight: 36,
-      alignSelf: 'flex-start',
-      paddingHorizontal: spacing.xs,
-      marginLeft: -spacing.xs,
-      borderRadius: radius.sm,
-    },
-    disclosureText: { color: p.muted, fontSize: fontSize.small, fontWeight: '600' },
-    details: { gap: spacing.md, paddingBottom: spacing.xs },
-    detailBlock: { gap: spacing.xs },
-    detailLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    detailLabel: {
-      color: p.muted,
-      fontSize: fontSize.tiny,
-      fontWeight: '700',
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-    },
-    miniRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-    miniTile: { minWidth: 72 },
-    zoneBar: {
-      flexDirection: 'row',
-      height: 10,
-      borderRadius: radius.sm,
-      overflow: 'hidden',
-      backgroundColor: p.border,
-      gap: 1,
-    },
-    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    flagChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
-      borderRadius: radius.pill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.border,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 2,
-      alignSelf: 'flex-start',
-    },
-    flagChipText: { fontSize: fontSize.tiny, fontWeight: '700', fontVariant: ['tabular-nums'] },
   });
