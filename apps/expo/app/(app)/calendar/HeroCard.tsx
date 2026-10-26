@@ -3,14 +3,20 @@
  * nav and the week summary as ONE glass surface:
  * - Row 1 controls: range nav + Today, segmented week/month, sync. Side
  *   padding 14 so nothing hugs the 24px pill corners (the cramped-corner fix).
- * - Row 2: small-caps scope label + sync chip, then the tile strip
- *   (Distance / Time / Load / Form-ring mini) — 2×2 mobile, 4-across wide.
- *   NO hairlines between tiles (v4: the wrapped verdict sentence used to
- *   push the grid and orphan the separators) — plain columns, spacing only.
+ * - Row 2: the tile strip (Distance / Time / Load / Form-ring mini) — 2×2
+ *   mobile, 4-across wide. NO hairlines between tiles (v4: the wrapped
+ *   verdict sentence used to push the grid and orphan the separators) — plain
+ *   columns, spacing only — then the small-caps scope label + sync chip.
  * - EVERY tile is tappable (v4): tapping any tile opens the coach drill-down
  *   StatusSheet (the DetailSheet chassis) with the coach bubble, the Gap,
  *   zone balance, fitness and recovery. The verdict sentence and the Details
  *   drawer are gone from the card — the tiles are the entry point.
+ * - Round-22 one-surface wide: the hero hosts the WHOLE calendar — controls →
+ *   tiles → Week/Month + scope → the day pills (week view) → the optional
+ *   `below` slot, where the calendar screen renders the day list INSIDE this
+ *   card (hairline above, mobile's flat rows at the hero's width). On mobile
+ *   the pills stay in the pinned hero's top row (round 19) and `below` is
+ *   unused — the day rows scroll in their own container.
  *
  * All numbers/text come from pure builders in `@/lib/stats-view` +
  * `@intervals/core`. Estimates keep their ≈; load is never fabricated.
@@ -103,11 +109,19 @@ export interface HeroCardProps {
   /** Today (ISO) — decides which days project from actual vs planned loads. */
   today: string;
   /**
-   * Round-19 mobile unification: the week day-strip rendered INSTEAD of the
-   * range title in row 1 (the pills become the week indicator + selector, so
-   * the range title can never ellipsize). Desktop omits it — title stays.
+   * Round-19 mobile unification: the week day-strip as the week indicator +
+   * selector. On mobile it owns a full-width row at the TOP of the hero (the
+   * range title keeps its whole row below). Round-22 wide: the pills move
+   * just above the day list (after the scope row) — same surface, mobile's
+   * stretched pill row at the hero's width.
    */
   pills?: React.ReactNode;
+  /**
+   * Round-22 wide one-surface: content rendered INSIDE the hero under a
+   * hairline (the week's day list). Mobile leaves it unset — the list scrolls
+   * in its own container below the pinned hero.
+   */
+  below?: React.ReactNode;
   /** The CURRENT calendar week — coach read + gap are always about this week. */
   currentWeek: {
     events: EventEx[];
@@ -135,6 +149,7 @@ export default function HeroCard({
   wellnessLoading,
   today,
   pills,
+  below,
   currentWeek,
 }: HeroCardProps) {
   const { colors } = useTheme();
@@ -215,12 +230,12 @@ export default function HeroCard({
 
   return (
     <GlassBar edge="none" floating style={s.hero} testID="hero-card">
-      {/* Round-19 mobile unification: the week day-strip owns a full-width row
-          at the top of the hero — the pills ARE the week indicator + selector,
-          and the range title below gets the whole row width (freshness + sync
-          moved down), so dates never ellipsize. Desktop keeps the classic
-          single title row. */}
-      {pills != null ? <View style={s.pillsRow}>{pills}</View> : null}
+      {/* Round-19 mobile unification: on mobile the week day-strip owns a
+          full-width row at the top of the hero — the pills ARE the week
+          indicator + selector, and the range title below gets the whole row
+          width, so dates never ellipsize. Wide (round 22) the pills live
+          further down, right above the day list they select from. */}
+      {pills != null && compact ? <View style={s.pillsRow}>{pills}</View> : null}
       {/* Row 1 — controls. 14px side padding keeps everything clear of the
           24px rounded corners (design spec §1; measured in round 11). */}
       <View style={s.controls}>
@@ -280,9 +295,35 @@ export default function HeroCard({
 
       <View style={s.heroSep} />
 
-      {/* Row 2 — window segmented + scope label, then the merged summary strip.
-          On mobile the freshness chip + sync button live here: the controls row
-          above gives the full range title every pixel it needs. */}
+      {/* The tile strip IS the entry point (v4): no verdict sentence, no
+          drawer — tap any tile for the coach drill-down. */}
+      <View style={s.tilesRow}>
+        {strip.map((tile, i) => (
+          <View key={tile.id} style={cellStyle(i, wide)}>
+            <TileButton label={tile.label} onPress={openSheet}>
+              <StatTile
+                label={tile.label}
+                value={tile.value}
+                valueTone={tile.valueTone}
+                sub={tile.sub}
+                hint={hints[tile.id] ?? undefined}
+                size={wide ? 'lg' : 'sm'}
+                testID={`tile-${tile.id}`}
+              />
+            </TileButton>
+          </View>
+        ))}
+        <View style={cellStyle(strip.length, wide)}>
+          <TileButton label="Form" onPress={openSheet}>
+            <FormCell model={formTile} compact={!wide} />
+          </TileButton>
+        </View>
+      </View>
+
+      {/* Row 2 — window segmented + scope label. On mobile the freshness chip
+          + sync button live here: the controls row above gives the full range
+          title every pixel it needs. Round-22 wide order: the scope row sits
+          between the tiles and the day pills it heads. */}
       <View style={s.labelRow}>
         <View style={s.segmented}>
           {(['week', 'month'] as const).map((v) => {
@@ -332,30 +373,18 @@ export default function HeroCard({
         ) : null}
       </View>
 
-      {/* The tile strip IS the entry point (v4): no verdict sentence, no
-          drawer — tap any tile for the coach drill-down. */}
-      <View style={s.tilesRow}>
-        {strip.map((tile, i) => (
-          <View key={tile.id} style={cellStyle(i, wide)}>
-            <TileButton label={tile.label} onPress={openSheet}>
-              <StatTile
-                label={tile.label}
-                value={tile.value}
-                valueTone={tile.valueTone}
-                sub={tile.sub}
-                hint={hints[tile.id] ?? undefined}
-                size={wide ? 'lg' : 'sm'}
-                testID={`tile-${tile.id}`}
-              />
-            </TileButton>
-          </View>
-        ))}
-        <View style={cellStyle(strip.length, wide)}>
-          <TileButton label="Form" onPress={openSheet}>
-            <FormCell model={formTile} compact={!wide} />
-          </TileButton>
-        </View>
-      </View>
+      {/* Round-22 wide: the day pills own a full-width row directly above the
+          day list they select from (mobile keeps them at the hero's top). */}
+      {pills != null && !compact ? <View style={s.pillsRow}>{pills}</View> : null}
+
+      {/* Round-22 one-surface: the day list flows INSIDE this same card under
+          a hairline (the calendar screen passes it as `below`). */}
+      {below != null ? (
+        <>
+          <View style={s.heroSep} />
+          {below}
+        </>
+      ) : null}
 
       {/* Coach drill-down: the old Details drawer content + the coach bubble
           lead, on the day-sheet chassis. Fine at both widths for v4. */}

@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Badge, IconButton } from '@/components/ui';
+import { GlassSurface } from '@/components/glass';
 import { SlideFadeIn } from '@/components/motion';
 import DayDetails from './DayDetails';
 import { MONTHS, dayLabel } from '@/lib/dates';
@@ -66,8 +67,8 @@ export default function DetailSidePanel({
       testID="detail-panel"
     >
       {shown ? (
-        <View style={s.panel} accessibilityLabel={`Day detail panel for ${dayLabel(shown)}`}>
-          <View style={s.head}>
+        <GlassSurface style={s.panel} testID="detail-panel-surface">
+          <View style={s.head} accessibilityLabel={`Day detail panel for ${dayLabel(shown)}`}>
             <Text accessibilityRole="header" style={s.title} numberOfLines={1}>
               {`${dayLabel(shown)} ${MONTHS[Number(shown.slice(5, 7)) - 1]!.slice(0, 3)}`}
             </Text>
@@ -95,7 +96,7 @@ export default function DetailSidePanel({
           <SlideFadeIn key={shown} dep={shown} direction={0} style={s.body}>
             <DayDetails cell={cellFor(shown)} today={today} />
           </SlideFadeIn>
-        </View>
+        </GlassSurface>
       ) : null}
     </Animated.View>
   );
@@ -112,10 +113,12 @@ const styles = (p: Palette) =>
     panel: {
       width: PANEL_W,
       marginRight: PANEL_GAP,
-      borderRadius: radius.lg,
+      // round-22: same glass chassis as the hero (translucent surface, light
+      // hairline, big pill radius) so panel + one-surface calendar read as one
+      // system — not a solid card bolted on
+      borderRadius: radius.xl,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: p.border,
-      backgroundColor: p.card,
+      borderColor: p.borderGlass,
       padding: spacing.lg,
       gap: spacing.md,
     },

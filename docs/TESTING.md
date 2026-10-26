@@ -161,3 +161,6 @@ records git dirty state at capture time. Convention for agents: **every
 capture goes through the registry** — take the shot anywhere (simctl,
 playwright, adb screencap), then hand the file to `capture`. Never rename or
 hand-place PNGs under `qa-screenshots/`; ad-hoc `round-*` folders are legacy.
+
+### Local export gotcha (Metro env cache)
+`npx expo export` can serve STALE `EXPO_PUBLIC_*` values from the Metro cache after `.env.local` edits (bit us: local QA URL briefly shipped to prod). Always export with `--clear` when env values changed, and verify the served bundle contains the expected URLs before deploying.
