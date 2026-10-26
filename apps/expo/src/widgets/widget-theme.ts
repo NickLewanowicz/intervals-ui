@@ -31,6 +31,8 @@ export const widgetTheme = {
   /** Accent as text on the card — brightened for contrast on dark. */
   accentText: '#96a9ff',
   success: '#41b26e',
+  /** Done-state date-chip fill (success at chip-friendly alpha). */
+  successSoft: 'rgba(65, 178, 110, 0.18)',
   danger: '#e5584f',
   /** RACE ONLY. */
   race: '#e0a458',

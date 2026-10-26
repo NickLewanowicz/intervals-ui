@@ -262,6 +262,9 @@ export default function CalendarScreen() {
 
   const lastSync = syncState.data?.lastSync ?? null;
   const navTitle = view === 'week' ? weekRangeLabelShort(weekStart) : monthLabelShort(monthAnc);
+  // round-19 mobile: freshness + sync moved to the hero's label row, so the
+  // range title owns the full controls row — "Oct 26 – Nov 1" fits and dates
+  // never ellipsize (was the known 375px truncation bug).
   const scopeLabel =
     view === 'week'
       ? weekStart === startOfWeek(today)
@@ -306,6 +309,18 @@ export default function CalendarScreen() {
         wellness={wellness.data ?? []}
         wellnessLoading={!wellness.data && (wellness.isLoading || wellness.isFetching)}
         today={today}
+        pills={
+          view === 'week' && !wide ? (
+            <DayStrip
+              dates={weekDatesList}
+              cellOf={(d) => cells.get(d)}
+              today={today}
+              selected={selectedDate}
+              onSelect={onPillSelect}
+              inHero
+            />
+          ) : undefined
+        }
         currentWeek={{
           events: live.data?.events ?? [],
           activities: live.data?.activities ?? [],
@@ -332,39 +347,65 @@ export default function CalendarScreen() {
               onRetry={() => void refetch()}
             />
           ) : view === 'week' ? (
-            /* ONE surface: day pills + titled day cards (hairline-separated);
-               mobile compact: 12px inset, no internal gap so day-to-day =
-               the day card's own 8+8 around the hairline (v2.1 spec §4) */
-            <GlassCard style={[s.weekGroup, !wide && s.weekGroupCompact]} testID="week-group">
-              <DayStrip
-                dates={weekDatesList}
-                cellOf={(d) => cells.get(d)}
-                today={today}
-                selected={selectedDate}
-                onSelect={onPillSelect}
-              />
-              <View style={s.rowSep} />
-              {weekDatesList.map((date, i) => (
-                <Fragment key={date}>
-                  {i > 0 ? <View style={s.rowSep} /> : null}
-                  <View
-                    ref={(v) => {
-                      cardRefs.current.set(date, v);
-                    }}
-                    onLayout={noteCardLayout(date)}
-                  >
-                    <DayCard
-                      date={date}
-                      cell={cellFor(date)}
-                      today={today}
-                      paceMinPerKm={pace}
-                      selected={selectedDate === date}
-                      onOpen={setDetailDate}
-                    />
-                  </View>
-                </Fragment>
-              ))}
-            </GlassCard>
+            /* Round-19 mobile unification: ONE surface — the day pills live in
+               the pinned hero above, and the day sections flow directly on the
+               page (hairline-separated, no second floating card). Desktop
+               (≥900px) keeps the contained sheet with its own DayStrip. */
+            wide ? (
+              <GlassCard style={s.weekGroup} testID="week-group">
+                <DayStrip
+                  dates={weekDatesList}
+                  cellOf={(d) => cells.get(d)}
+                  today={today}
+                  selected={selectedDate}
+                  onSelect={onPillSelect}
+                />
+                <View style={s.rowSep} />
+                {weekDatesList.map((date, i) => (
+                  <Fragment key={date}>
+                    {i > 0 ? <View style={s.rowSep} /> : null}
+                    <View
+                      ref={(v) => {
+                        cardRefs.current.set(date, v);
+                      }}
+                      onLayout={noteCardLayout(date)}
+                    >
+                      <DayCard
+                        date={date}
+                        cell={cellFor(date)}
+                        today={today}
+                        paceMinPerKm={pace}
+                        selected={selectedDate === date}
+                        onOpen={setDetailDate}
+                      />
+                    </View>
+                  </Fragment>
+                ))}
+              </GlassCard>
+            ) : (
+              <View style={s.weekGroupFlat} testID="week-group">
+                {weekDatesList.map((date, i) => (
+                  <Fragment key={date}>
+                    {i > 0 ? <View style={s.rowSep} /> : null}
+                    <View
+                      ref={(v) => {
+                        cardRefs.current.set(date, v);
+                      }}
+                      onLayout={noteCardLayout(date)}
+                    >
+                      <DayCard
+                        date={date}
+                        cell={cellFor(date)}
+                        today={today}
+                        paceMinPerKm={pace}
+                        selected={selectedDate === date}
+                        onOpen={setDetailDate}
+                      />
+                    </View>
+                  </Fragment>
+                ))}
+              </View>
+            )
           ) : (
             <GlassCard style={s.monthCard} testID="month-card">
               <View style={s.monthHeaderRow}>
@@ -485,7 +526,7 @@ export default function CalendarScreen() {
             contentContainerStyle={[
               s.scrollContent,
               s.scrollContentMobile,
-              { paddingTop: pageSpacing.cardGap },
+              { paddingTop: spacing.xs },
             ]}
             keyboardShouldPersistTaps="handled"
           >
@@ -607,9 +648,10 @@ const styles = (p: Palette) =>
     windowCol: { flex: 1, minWidth: 0 },
     // --- week sheet: ONE containing card, pills + hairline-separated cards ---
     weekGroup: { paddingVertical: pageSpacing.cardGap / 2, overflow: 'hidden' },
-    // mobile (<900px) only: container padding 12, gap 0 — day sections carry
-    // the rhythm themselves (calendar-week-mobile-spec v2.1 §4)
-    weekGroupCompact: { paddingHorizontal: spacing.md, gap: 0 },
+    // mobile (<900px) round 19: NO containing card — day sections run directly
+    // on the page under the pinned hero (12px inset, gap 0; the day card's own
+    // 8+8 around the hairline carries the rhythm, v2.1 spec §4)
+    weekGroupFlat: { paddingHorizontal: spacing.md, gap: 0 },
     rowSep: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: p.border,

@@ -31,6 +31,11 @@ struct WidgetSnapshot: Codable {
     let isToday: Bool
     let isRace: Bool
     let done: Bool
+    /// Round-19 additive fields (Android done/missed states). Optional with a
+    /// default so snapshots written before the field existed still decode and
+    /// the sample fixtures stay unchanged.
+    var missed: Bool? = nil
+    var unplanned: Bool? = nil
     let name: String
     let metric: String
   }

@@ -46,6 +46,8 @@ export function renderWidgetByName(
 ): React.JSX.Element | null {
   const Widget = nameToWidget[widgetName];
   if (!Widget) return null;
+  // launcher-reported dp sizes — the layouts compute all heights from these
+  console.log(`[widget] render ${widgetName} ${width}x${height}`);
   return <Widget width={width} height={height} snapshot={snapshot} />;
 }
 

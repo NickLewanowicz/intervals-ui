@@ -22,6 +22,7 @@ import { currentUserId, pb } from './pb';
 import { toActivity, toEvent, toWellness, type Proposal } from './records';
 import {
   WIDGET_SNAPSHOT_STALE_MS,
+  WIDGET_UPCOMING_PAST_DAYS,
   WIDGET_WRITE_DEBOUNCE_MS,
   buildWidgetSnapshot,
   readWidgetSnapshot,
@@ -337,14 +338,16 @@ export function useInvalidateMirrors() {
 
 /**
  * The widget snapshot source: the SAME mirror reads the calendar uses, over a
- * window wide enough for both widgets — events/activities today → +90d (the
- * sync window, so far-future races reach the countdown) and 14 wellness days.
+ * window wide enough for both widgets — events/activities [today−2d, +90d]
+ * (the sync window, so far-future races reach the countdown AND done/missed
+ * states survive snapshots written before the activity synced) and 14
+ * wellness days.
  */
 async function fetchWidgetSnapshotSource(): Promise<WidgetSnapshotInput> {
   const user = currentUserId();
   if (!user) throw new Error('not signed in');
   const today = todayISO();
-  const filter = calendarWindowFilter(user, today, addDays(today, 90));
+  const filter = calendarWindowFilter(user, addDays(today, -WIDGET_UPCOMING_PAST_DAYS), addDays(today, 90));
   const [ev, ac, wl] = await Promise.all([
     pb.collection('calendar_events').getList(1, 300, { filter, sort: 'start_date_local' }),
     pb.collection('activities').getList(1, 300, { filter, sort: 'start_date_local' }),

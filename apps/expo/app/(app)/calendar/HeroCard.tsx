@@ -106,6 +106,12 @@ export interface HeroCardProps {
   wellnessLoading: boolean;
   /** Today (ISO) — decides which days project from actual vs planned loads. */
   today: string;
+  /**
+   * Round-19 mobile unification: the week day-strip rendered INSTEAD of the
+   * range title in row 1 (the pills become the week indicator + selector, so
+   * the range title can never ellipsize). Desktop omits it — title stays.
+   */
+  pills?: React.ReactNode;
   /** The CURRENT calendar week — verdict + gap are always about this week. */
   currentWeek: {
     events: EventEx[];
@@ -132,12 +138,16 @@ export default function HeroCard({
   wellness,
   wellnessLoading,
   today,
+  pills,
   currentWeek,
 }: HeroCardProps) {
   const { colors } = useTheme();
   const s = styles(colors);
   const { width: winW } = useWindowDimensions();
   const wide = winW >= WIDE_BREAKPOINT;
+  /** Mobile hero anatomy (round 19): freshness + sync live on the label row so
+   *  the controls row gives the range title full width (no date ellipsis). */
+  const compact = !wide;
   const [open, setOpen] = useState(false);
 
   const trend = useMemo(
@@ -197,9 +207,14 @@ export default function HeroCard({
 
   return (
     <GlassBar edge="none" floating style={s.hero} testID="hero-card">
+      {/* Round-19 mobile unification: the week day-strip owns a full-width row
+          at the top of the hero — the pills ARE the week indicator + selector,
+          and the range title below gets the whole row width (freshness + sync
+          moved down), so dates never ellipsize. Desktop keeps the classic
+          single title row. */}
+      {pills != null ? <View style={s.pillsRow}>{pills}</View> : null}
       {/* Row 1 — controls. 14px side padding keeps everything clear of the
-          24px rounded corners (design spec §1; measured in round 11).
-          Left: range nav + Today. Right: sync chip + sync button. */}
+          24px rounded corners (design spec §1; measured in round 11). */}
       <View style={s.controls}>
         <IconButton
           icon="chevron-back"
@@ -220,6 +235,7 @@ export default function HeroCard({
           hitSlop={8}
           style={s.ctrlBtn}
         />
+        <View style={s.spring} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Go to today"
@@ -229,31 +245,36 @@ export default function HeroCard({
         >
           <Text style={s.todayText}>Today</Text>
         </Pressable>
-        <View style={s.spring} />
-        {freshness ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Sync status — open settings"
-            onPress={onFreshnessPress}
-            hitSlop={8}
-          >
-            <Text style={s.freshness}>synced {freshness}</Text>
-          </Pressable>
+        {!compact ? (
+          <>
+            {freshness ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sync status — open settings"
+                onPress={onFreshnessPress}
+                hitSlop={8}
+              >
+                <Text style={s.freshness}>synced {freshness}</Text>
+              </Pressable>
+            ) : null}
+            <IconButton
+              icon="sync"
+              label="Sync now"
+              onPress={onSync}
+              loading={syncing}
+              size={15}
+              hitSlop={10}
+              style={s.syncBtn}
+            />
+          </>
         ) : null}
-        <IconButton
-          icon="sync"
-          label="Sync now"
-          onPress={onSync}
-          loading={syncing}
-          size={15}
-          hitSlop={10}
-          style={s.syncBtn}
-        />
       </View>
 
       <View style={s.heroSep} />
 
-      {/* Row 2 — window segmented + scope label, then the merged summary strip */}
+      {/* Row 2 — window segmented + scope label, then the merged summary strip.
+          On mobile the freshness chip + sync button live here: the controls row
+          above gives the full range title every pixel it needs. */}
       <View style={s.labelRow}>
         <View style={s.segmented}>
           {(['week', 'month'] as const).map((v) => {
@@ -274,8 +295,33 @@ export default function HeroCard({
             );
           })}
         </View>
-        <Text style={s.scopeLabel}>{scopeLabel}</Text>
+        <Text style={s.scopeLabel} numberOfLines={1}>
+          {scopeLabel}
+        </Text>
         <View style={s.spring} />
+        {compact ? (
+          <>
+            {freshness ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sync status — open settings"
+                onPress={onFreshnessPress}
+                hitSlop={8}
+              >
+                <Text style={s.freshness}>synced {freshness}</Text>
+              </Pressable>
+            ) : null}
+            <IconButton
+              icon="sync"
+              label="Sync now"
+              onPress={onSync}
+              loading={syncing}
+              size={15}
+              hitSlop={10}
+              style={s.syncBtn}
+            />
+          </>
+        ) : null}
       </View>
       <View style={wide ? s.tilesRow : s.tilesGrid}>
         {strip.map((tile, i) => (
@@ -562,6 +608,8 @@ const styles = (p: Palette) =>
       fontWeight: '700',
       flexShrink: 1,
     },
+    // mobile week: the day-strip's own full-width row at the top of the hero
+    pillsRow: { flexDirection: 'row', width: '100%' },
     spring: { flex: 1, minWidth: spacing.xs },
     todayBtn: {
       minHeight: 28,

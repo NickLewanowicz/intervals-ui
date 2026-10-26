@@ -71,7 +71,10 @@ export function WidgetNoData({ width, height, padding = 12 }: WidgetProps & { pa
   );
 }
 
-/** Direction-tinted 7-day delta chip ("+2.1"); renders nothing for null. */
+/** Direction-tinted 7-day delta chip ("+2.1"); renders nothing for null.
+ *  Round-16 recipe, unchanged: the pill HUGS its label — bordered/pill
+ *  FlexWidgets with explicit sizes + lineHeight'd labels clip text under
+ *  RemoteViews (LinearLayout) measurement, so no fixed box here. */
 export function DeltaChip({ value, goodUp }: { value: number | null; goodUp: boolean }) {
   if (value == null) return null;
   const color = value === 0 ? t.muted : (value > 0) === goodUp ? t.success : t.danger;

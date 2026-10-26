@@ -117,7 +117,7 @@ describe('computeNextRace', () => {
 });
 
 describe('computeUpcoming', () => {
-  it('windows to [today, +14d], pairs done runs, and keeps races tinted', () => {
+  it('windows to [today−2d, +14d], pairs done runs, and keeps races tinted', () => {
     const rows = computeUpcoming(
       [
         ev({ id: 11, start_date_local: '2026-10-26T18:00:00', name: 'Tuesday intervals', distance: 10000, icu_training_load: 60 }),
@@ -130,7 +130,7 @@ describe('computeUpcoming', () => {
       '2026-10-24',
     );
     expect(rows.map((r) => [r.date, r.name, r.done, r.isRace, r.isToday])).toEqual([
-      ['2026-10-24', 'Saturday long run', true, false, true],
+      ['2026-10-24', 'Long run done', true, false, true], // actual name wins, calendar parity
       ['2026-10-26', 'Tuesday intervals', false, false, false],
       ['2026-11-06', 'Autumn 10K', false, true, false],
     ]);
@@ -139,6 +139,42 @@ describe('computeUpcoming', () => {
     expect(rows[0]!.metric).toContain('load 210');
     // planned rows show plan numbers
     expect(rows[1]!.metric).toContain('10.0km');
+    // far-future race never reaches the list
+    expect(rows).toHaveLength(3);
+  });
+
+  it('THE round-19 regression: intervals.icu 0 sentinels still pair by date', () => {
+    // real mirror shape: BOTH pairing columns are 0 (intervals.icu "no pair"),
+    // which the old `!= null` checks treated as real ids
+    const rows = computeUpcoming(
+      [
+        ev({
+          id: 145969951,
+          start_date_local: '2026-10-25T08:00:00',
+          name: 'Recovery jog',
+          distance: 0,
+          moving_time: 3000,
+          paired_activity_id: 0,
+        }),
+      ],
+      [
+        act({
+          id: 'i201075229',
+          start_date_local: '2026-10-25T07:42:17',
+          name: 'Morning Run',
+          distance: 8431.38,
+          moving_time: 2400,
+          paired_event_id: 0,
+        }),
+      ],
+      '2026-10-25',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ date: '2026-10-25', done: true, missed: false, unplanned: false, isToday: true });
+    expect(rows[0]!.name).toBe('Morning Run');
+    // actuals with the differing planned target as suffix (50m vs 40m)
+    expect(rows[0]!.metric).toContain('8.4km');
+    expect(rows[0]!.metric).toContain('(planned 50m)');
   });
 
   it('falls back to a same-date unclaimed activity when pairing ids are missing', () => {
@@ -148,8 +184,75 @@ describe('computeUpcoming', () => {
       '2026-10-24',
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ date: '2026-10-25', done: true, name: 'Planned easy' });
+    expect(rows[0]).toMatchObject({ date: '2026-10-25', done: true, name: 'Easy 5' });
     expect(rows[0]!.metric).toContain('5.0km');
+  });
+
+  it('pairs an explicit reverse paired_event_id even across a same-date crowd', () => {
+    const rows = computeUpcoming(
+      [ev({ id: 30, start_date_local: '2026-10-24T18:00:00', name: 'Evening tempo' })],
+      [
+        act({ id: 'x1', start_date_local: '2026-10-24T08:00:00', name: 'Stray shakeout', distance: 3000, paired_event_id: 0 }),
+        act({ id: 'x2', start_date_local: '2026-10-24T18:05:00', name: 'Tempo done', distance: 9000, paired_event_id: 30 }),
+      ],
+      '2026-10-24',
+    );
+    const tempo = rows.find((r) => r.name === 'Tempo done');
+    expect(tempo).toMatchObject({ done: true, unplanned: false });
+    // the stray same-date run keeps its own unplanned row
+    const stray = rows.find((r) => r.name === 'Stray shakeout');
+    expect(stray).toMatchObject({ done: true, unplanned: true });
+    expect(stray!.metric).toMatch(/^unplanned · /);
+  });
+
+  it('loose pairing picks the closest-start activity, not the first event', () => {
+    // two same-day events + one activity: the 08:30 event is closer to the
+    // 09:00 run than the 08:00 event and must win (round-19 temp-mirror case)
+    const rows = computeUpcoming(
+      [
+        ev({ id: 70, start_date_local: '2026-10-25T08:00:00', name: 'Recovery jog', moving_time: 1800, paired_activity_id: 0 }),
+        ev({ id: 71, start_date_local: '2026-10-25T08:30:00', name: 'Paired tempo', moving_time: 2400, paired_activity_id: 0 }),
+      ],
+      [act({ id: 'y1', start_date_local: '2026-10-25T09:00:00', name: 'Tempo done', distance: 8700, moving_time: 2100, paired_event_id: 0 })],
+      '2026-10-25',
+    );
+    const tempo = rows.find((r) => r.done);
+    expect(tempo).toMatchObject({ name: 'Tempo done' });
+    expect(tempo!.metric).toContain('(planned 40m)'); // the 08:30 event's target
+    const recovery = rows.find((r) => r.name === 'Recovery jog');
+    expect(recovery).toMatchObject({ done: false, missed: false }); // today, still planned
+  });
+
+  it('keeps past days: done survives a stale snapshot, unplanned days still render', () => {
+    const rows = computeUpcoming(
+      [
+        ev({ id: 40, start_date_local: '2026-10-25T08:00:00', name: 'Sunday easy', moving_time: 1800, paired_activity_id: 0 }),
+        ev({ id: 41, start_date_local: '2026-10-24T08:00:00', name: 'Saturday long', moving_time: 5400, paired_activity_id: 0 }),
+      ],
+      [
+        act({ id: 's1', start_date_local: '2026-10-25T09:00:00', name: 'Morning Run', distance: 8431, moving_time: 2869, paired_event_id: 0 }),
+        act({ id: 's2', start_date_local: '2026-10-23T09:00:00', name: 'Too old', distance: 4000, paired_event_id: 0 }),
+      ],
+      '2026-10-26', // Monday, looking back at the weekend
+    );
+    // Sunday run done (planned row + actual merge), inside the 2-day lookback
+    const sunday = rows.find((r) => r.date === '2026-10-25');
+    expect(sunday).toMatchObject({ done: true, missed: false, isToday: false });
+    expect(sunday!.metric).toContain('(planned 30m)');
+    // Saturday planned run never recorded → missed, still listed
+    const saturday = rows.find((r) => r.date === '2026-10-24');
+    expect(saturday).toMatchObject({ done: false, missed: true });
+    // older than the 2-day lookback → dropped entirely
+    expect(rows.find((r) => r.date === '2026-10-23')).toBeUndefined();
+  });
+
+  it('marks a past race without a result as race, not missed', () => {
+    const rows = computeUpcoming(
+      [ev({ id: 50, category: 'RACE_A', start_date_local: '2026-10-25T09:00:00', name: 'Autumn 10K' })],
+      [],
+      '2026-10-26',
+    );
+    expect(rows[0]).toMatchObject({ done: false, missed: false, isRace: true });
   });
 
   it('adds unpaired recorded runs and falls back on metric lines', () => {
@@ -159,8 +262,18 @@ describe('computeUpcoming', () => {
       '2026-10-24',
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ done: true, name: 'Lunch shakeout', isToday: true });
-    expect(rows[0]!.metric).toBe('Run');
+    expect(rows[0]).toMatchObject({ done: true, unplanned: true, name: 'Lunch shakeout', isToday: true });
+    expect(rows[0]!.metric).toBe('unplanned · Run');
+  });
+
+  it('omits the (planned …) suffix when actuals land within 5% of targets', () => {
+    const rows = computeUpcoming(
+      [ev({ id: 60, start_date_local: '2026-10-24T08:00:00', name: 'Easy 6', distance: 6000, moving_time: 2100, paired_activity_id: 0 })],
+      [act({ id: 'b1', start_date_local: '2026-10-24T08:20:00', name: 'Easy 6', distance: 6150, moving_time: 2200, paired_event_id: 0 })],
+      '2026-10-24',
+    );
+    expect(rows[0]!.done).toBe(true);
+    expect(rows[0]!.metric).not.toContain('planned');
   });
 
   it('is empty when nothing is scheduled', () => {

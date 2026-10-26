@@ -12,7 +12,7 @@
  * widget render graph may load it. AsyncStorage itself is storage-only.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FORM_BAND_WORD, RACE_CATEGORIES, fitnessTrend } from '@intervals/core';
+import { FORM_BAND_WORD, RACE_CATEGORIES, fitnessTrend, formatDuration, formatKm } from '@intervals/core';
 import type { Activity, EventEx, WellnessDay } from '@intervals/core';
 import { MONTHS, WEEKDAY_SHORT, addDays, timeLabel, todayISO, weekdayIndex } from './dates';
 import { activityLine, eventLine, relativeTime } from './format';
@@ -53,8 +53,14 @@ export interface WidgetUpcomingEntry {
   isToday: boolean;
   isRace: boolean;
   done: boolean;
+  /** Past planned run with no recorded activity — the calendar's MISSED. */
+  missed: boolean;
+  /** Recorded run on a day with no planned event — renders with an "unplanned ·" metric prefix. */
+  unplanned: boolean;
   name: string;
-  /** Precomputed "8.5km · 45m · load 75" line (never empty — falls back). */
+  /** Precomputed "8.5km · 45m · load 75" line (never empty — falls back).
+   *  Done rows carry actuals plus "(planned …)" when targets differ;
+   *  unplanned rows carry the "unplanned · " prefix. */
   metric: string;
 }
 
@@ -139,6 +145,20 @@ export function isTrainingEvent(e: EventEx): boolean {
   return cat === 'WORKOUT' || RACE_SET.has(cat);
 }
 
+/**
+ * How many days of recorded history the upcoming list keeps behind today.
+ * Without it a completed run vanishes the next day (and its planned row can
+ * never show a done state) whenever the snapshot refreshed after midnight.
+ */
+export const WIDGET_UPCOMING_PAST_DAYS = 2;
+
+/**
+ * intervals.icu mirrors write 0 (never null) into paired_activity_id /
+ * paired_event_id when there is no pairing — treating 0 as an id breaks both
+ * the direct match and the same-date fallback (the round-19 done-state bug).
+ */
+const hasPair = (v: number | null | undefined): v is number => v != null && v !== 0;
+
 const inWindow = (startLocal: string, today: string, days: number) => {
   const d = dateOf(startLocal);
   return d >= today && d <= addDays(today, days);
@@ -148,11 +168,15 @@ const byStart = (a: { start_date_local: string }, b: { start_date_local: string 
   a.start_date_local.localeCompare(b.start_date_local);
 
 /**
- * Runs for the next `windowDays` days (default 14): planned events paired
- * with their recorded activity (paired_activity_id, falling back to an
- * unclaimed activity on the same date for legacy rows without pairing ids),
- * plus unpaired recorded runs. Sorted by start; one row per run so multi-run
- * days survive.
+ * Runs for [today−2d, +windowDays] (default +14d): planned events paired with
+ * their recorded activity — by paired ids (0 = no pair, see hasPair) or, for
+ * legacy rows without ids, a same-date fallback — plus unpaired recorded
+ * runs. Sorted by start; one row per run so multi-run days survive.
+ *
+ * A paired/done row shows the ACTUAL name + metrics (calendar parity), with a
+ * "(planned …)" suffix for targets that differ by more than 5%; a past
+ * planned row with no activity is missed; an activity on an unplanned day
+ * gets its own row with an "unplanned ·" metric prefix.
  */
 export function computeUpcoming(
   events: EventEx[],
@@ -160,67 +184,118 @@ export function computeUpcoming(
   today: string,
   windowDays = 14,
 ): WidgetUpcomingEntry[] {
-  const claimed = new Set<string>();
-  const findPair = (e: EventEx): Activity | undefined => {
-    if (e.paired_activity_id != null) {
-      const id = String(e.paired_activity_id);
-      const a = activities.find((x) => x.id === id);
-      if (a) {
-        claimed.add(id);
-        return a;
-      }
-    }
-    // date-match fallback: an activity the same day not claimed by any event —
-    // including ones whose ONLY link is the reverse paired_event_id
-    const date = dateOf(e.start_date_local);
-    const a = activities.find(
-      (x) =>
-        !claimed.has(x.id) &&
-        (x.paired_event_id == null || x.paired_event_id === e.id) &&
-        dateOf(x.start_date_local) === date,
-    );
-    if (a) {
-      claimed.add(a.id);
-      return a;
-    }
-    return undefined;
+  const from = addDays(today, -WIDGET_UPCOMING_PAST_DAYS);
+  const to = addDays(today, windowDays);
+  const inList = (startLocal: string) => {
+    const d = dateOf(startLocal);
+    return d >= from && d <= to;
   };
 
-  const rowOf = (name: string, isRace: boolean, done: boolean, date: string, metric: string): WidgetUpcomingEntry => ({
+  const eventList = events
+    .filter((e) => isTrainingEvent(e) && inList(e.start_date_local))
+    .sort(byStart);
+  const actList = activities.filter((x) => inList(x.start_date_local)).sort(byStart);
+
+  const claimed = new Set<string>();
+  const pairOf = new Map<EventEx, Activity>();
+  // 1. direct paired_activity_id (0 sentinel = no pair, see hasPair)
+  for (const e of eventList) {
+    if (!hasPair(e.paired_activity_id)) continue;
+    const a = actList.find((x) => x.id === String(e.paired_activity_id));
+    if (a && !claimed.has(a.id)) {
+      pairOf.set(e, a);
+      claimed.add(a.id);
+    }
+  }
+  // 2. explicit reverse link (a.paired_event_id === e.id)
+  for (const e of eventList) {
+    if (pairOf.has(e) || e.id == null) continue;
+    const a = actList.find((x) => !claimed.has(x.id) && x.paired_event_id === e.id);
+    if (a) {
+      pairOf.set(e, a);
+      claimed.add(a.id);
+    }
+  }
+  // 3. loose: globally closest start first — greedy event order would let an
+  // earlier event steal a later run from its true (closer) event
+  const candidates: Array<{ e: EventEx; a: Activity; d: number }> = [];
+  for (const e of eventList) {
+    if (pairOf.has(e)) continue;
+    const t0 = Date.parse(e.start_date_local);
+    if (Number.isNaN(t0)) continue;
+    for (const x of actList) {
+      if (claimed.has(x.id) || hasPair(x.paired_event_id)) continue;
+      if (dateOf(x.start_date_local) !== dateOf(e.start_date_local)) continue;
+      candidates.push({ e, a: x, d: Math.abs(Date.parse(x.start_date_local) - t0) });
+    }
+  }
+  candidates.sort((p, q) => p.d - q.d);
+  for (const c of candidates) {
+    if (pairOf.has(c.e) || claimed.has(c.a.id)) continue;
+    pairOf.set(c.e, c.a);
+    claimed.add(c.a.id);
+  }
+
+  const rowOf = (
+    name: string,
+    isRace: boolean,
+    done: boolean,
+    missed: boolean,
+    unplanned: boolean,
+    date: string,
+    metric: string,
+  ): WidgetUpcomingEntry => ({
     date,
     dow: WEEKDAY_SHORT[weekdayIndex(date)] ?? '',
     day: Number(date.slice(8, 10)),
     isToday: date === today,
     isRace,
     done,
+    missed,
+    unplanned,
     name,
     metric,
   });
 
   const rows: WidgetUpcomingEntry[] = [];
-  for (const e of events.filter((e) => isTrainingEvent(e) && inWindow(e.start_date_local, today, windowDays)).sort(byStart)) {
+  for (const e of eventList) {
     const date = dateOf(e.start_date_local);
-    const act = findPair(e);
+    const isRace = RACE_SET.has(e.category ?? '');
+    const act = pairOf.get(e);
     rows.push(
       rowOf(
-        e.name ?? act?.name ?? 'Run',
-        RACE_SET.has(e.category ?? ''),
+        act?.name ?? e.name ?? 'Run',
+        isRace,
         act != null,
+        act == null && !isRace && date < today,
+        false,
         date,
-        act ? activityLine(act) : eventLine(e) || fallbackMetric(e),
+        act ? withPlannedDiff(act, e) : eventLine(e) || fallbackMetric(e),
       ),
     );
   }
-  for (const a of activities
-    .filter((x) => !claimed.has(x.id) && inWindow(x.start_date_local, today, windowDays))
-    .sort(byStart)) {
+  for (const a of actList) {
+    if (claimed.has(a.id)) continue;
     const date = dateOf(a.start_date_local);
-    rows.push(
-      rowOf(a.name ?? 'Run', a.race === true, true, date, activityLine(a) || fallbackMetric({ type: a.type })),
-    );
+    const line = activityLine(a) || fallbackMetric({ type: a.type });
+    rows.push(rowOf(a.name ?? 'Run', a.race === true, true, false, true, date, `unplanned · ${line}`));
   }
   // stable sort: same-day rows keep their start-time order from the loops above
   return rows.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** A planned target "differs" when the actual is missing it or off by >5%. */
+const targetDiffers = (planned: number | undefined, actual: number | null | undefined): boolean =>
+  planned != null && planned > 0 && (actual == null || actual <= 0 || Math.abs(actual - planned) / planned > 0.05);
+
+/** Actual metric line, suffixed " (planned …)" with the targets that differ. */
+function withPlannedDiff(a: Activity, e: EventEx): string {
+  const line = activityLine(a) || fallbackMetric({ type: a.type });
+  const targets = [
+    targetDiffers(e.distance, a.distance) ? formatKm(e.distance!) : null,
+    targetDiffers(e.moving_time, a.moving_time) ? formatDuration(e.moving_time!) : null,
+  ].filter((p): p is string => p != null);
+  return targets.length > 0 ? `${line} (planned ${targets.join(' · ')})` : line;
 }
 
 /** Metric line for events with no distance/time/load yet ("Run", "Race day"). */

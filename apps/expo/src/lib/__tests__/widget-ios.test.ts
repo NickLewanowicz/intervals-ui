@@ -74,7 +74,7 @@ describe('iOS widget wire contract (Swift Codable ↔ WidgetSnapshot JSON)', () 
     const snap = buildWidgetSnapshot(sampleInput);
     for (const row of snap.upcoming) {
       expect(Object.keys(row).sort()).toEqual(
-        ['date', 'day', 'done', 'dow', 'isRace', 'isToday', 'metric', 'name'].sort(),
+        ['date', 'day', 'done', 'dow', 'isRace', 'isToday', 'metric', 'missed', 'name', 'unplanned'].sort(),
       );
     }
   });

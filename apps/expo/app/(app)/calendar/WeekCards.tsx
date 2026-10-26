@@ -75,18 +75,26 @@ export function DayStrip({
   today,
   selected,
   onSelect,
+  inHero = false,
 }: {
   dates: string[];
   cellOf: (date: string) => DayCell | undefined;
   today: string;
   selected: string | null;
   onSelect: (date: string) => void;
+  /** Round-19 mobile: rendered inside the hero's controls row — no own
+   *  padding (the hero supplies it), tighter gaps for the narrower slot. */
+  inHero?: boolean;
 }) {
   const { colors } = useTheme();
   const s = styles(colors);
   const pills: DayPillModel[] = dayPills(dates, cellOf, today);
   return (
-    <View style={s.strip} testID="day-strip" accessibilityRole="tablist">
+    <View
+      style={[s.strip, inHero && s.stripInHero]}
+      testID="day-strip"
+      accessibilityRole="tablist"
+    >
       {pills.map((p) => {
         const isSel = selected === p.date;
         const filled = p.isToday || isSel;
@@ -436,6 +444,9 @@ const styles = (p: Palette) =>
       paddingHorizontal: pageSpacing.rowPadX,
       paddingVertical: spacing.sm,
     },
+    // in-hero variant (round 19 mobile): the hero supplies side padding; the
+    // strip fills its full-width row (flex along the row's main axis)
+    stripInHero: { paddingHorizontal: 0, paddingVertical: 0, gap: 3, flex: 1 },
     pill: {
       flex: 1,
       maxWidth: 56,
