@@ -69,7 +69,7 @@ import { useTheme } from '@/theme-context';
 type HostNode = Parameters<InstanceType<typeof View>['measureLayout']>[0];
 
 /** Viewport at which the detail flips from bottom sheet to side panel. */
-const WIDE_BREAKPOINT = 900;
+const WIDE_BREAKPOINT = layout.wide;
 
 export default function CalendarScreen() {
   const { colors } = useTheme();
@@ -282,185 +282,217 @@ export default function CalendarScreen() {
       })
     : layout.maxW;
 
+  // Pinned-header split (owner round 18 — the native list pattern): on mobile
+  // the hero (pills + window switch + stats verdict) is FIXED at the top and
+  // only the window content scrolls in its own container, so the page itself
+  // never scrolls. Desktop (>=900px) keeps the single scrolling page — unchanged.
+  const heroBlock = (
+    /* ONE hero surface: controls + tile strip + verdict + drawer */
+    <View>
+      <HeroCard
+        view={view}
+        title={navTitle}
+        scopeLabel={scopeLabel}
+        onPrev={() => step(-1)}
+        onNext={() => step(1)}
+        onToday={goToday}
+        onView={setView}
+        onSync={() => void onSync()}
+        syncing={syncing}
+        freshness={lastSync ? relativeTime(lastSync) : null}
+        onFreshnessPress={() => router.push('/settings')}
+        stats={view === 'week' ? stats : monthStats}
+        showZones={view === 'week'}
+        wellness={wellness.data ?? []}
+        wellnessLoading={!wellness.data && (wellness.isLoading || wellness.isFetching)}
+        today={today}
+        currentWeek={{
+          events: live.data?.events ?? [],
+          activities: live.data?.activities ?? [],
+          horizonLabel: sundayLabel,
+        }}
+      />
+      {syncMsg ? (
+        <Text style={s.syncMsg} numberOfLines={1}>
+          {syncMsg}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  const windowBlock = (
+    <Animated.View style={[s.windowRow, { maxWidth: rowMax }]}>
+      <View style={s.windowCol}>
+        <SlideFadeIn dep={navKey} direction={dir}>
+          {firstLoad ? (
+            <Loading label="Loading calendar…" />
+          ) : isError ? (
+            <ErrorBox
+              message={`Could not load calendar: ${(error as Error)?.message ?? 'error'}`}
+              onRetry={() => void refetch()}
+            />
+          ) : view === 'week' ? (
+            /* ONE surface: day pills + titled day cards (hairline-separated);
+               mobile compact: 12px inset, no internal gap so day-to-day =
+               the day card's own 8+8 around the hairline (v2.1 spec §4) */
+            <GlassCard style={[s.weekGroup, !wide && s.weekGroupCompact]} testID="week-group">
+              <DayStrip
+                dates={weekDatesList}
+                cellOf={(d) => cells.get(d)}
+                today={today}
+                selected={selectedDate}
+                onSelect={onPillSelect}
+              />
+              <View style={s.rowSep} />
+              {weekDatesList.map((date, i) => (
+                <Fragment key={date}>
+                  {i > 0 ? <View style={s.rowSep} /> : null}
+                  <View
+                    ref={(v) => {
+                      cardRefs.current.set(date, v);
+                    }}
+                    onLayout={noteCardLayout(date)}
+                  >
+                    <DayCard
+                      date={date}
+                      cell={cellFor(date)}
+                      today={today}
+                      paceMinPerKm={pace}
+                      selected={selectedDate === date}
+                      onOpen={setDetailDate}
+                    />
+                  </View>
+                </Fragment>
+              ))}
+            </GlassCard>
+          ) : (
+            <GlassCard style={s.monthCard} testID="month-card">
+              <View style={s.monthHeaderRow}>
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+                  <Text key={d} style={s.monthDow}>
+                    {d}
+                  </Text>
+                ))}
+              </View>
+              {grid.weeks.map((w) => (
+                <View key={w[0]} style={s.monthWeekRow}>
+                  {w.map((date) => {
+                    const cell = cellFor(date);
+                    return (
+                      <MonthCell
+                        key={date}
+                        date={date}
+                        cell={cell}
+                        inMonth={isInMonth(date, monthAnc)}
+                        today={date === today}
+                        selected={selectedDate === date}
+                        onSelect={() => setSelectedDate(date)}
+                        onOpen={() => goDay(date)}
+                      />
+                    );
+                  })}
+                </View>
+              ))}
+              {/* FIX-12 legend: planned / recorded / race are eye-distinguishable */}
+              <View style={s.legendRow}>
+                <LegendDot kind="plan" />
+                <Text style={s.legendText}>planned</Text>
+                <LegendDot kind="done" />
+                <Text style={s.legendText}>recorded</Text>
+                <LegendDot kind="race" />
+                <Text style={s.legendText}>race</Text>
+              </View>
+              {/* selected-day panel: the day's runs BELOW the grid, no navigation */}
+              {selectedDate ? (
+                <View style={s.dayPanel}>
+                  <View style={s.rowSep} />
+                  <View style={s.panelHead}>
+                    <Text style={s.panelTitle}>
+                      {`${dayLabel(selectedDate)} ${MONTHS[Number(selectedDate.slice(5, 7)) - 1]!.slice(0, 3)}`}
+                    </Text>
+                    {selectedDate === today ? <Badge label="today" tone="accent" /> : null}
+                    <View style={s.spring} />
+                    <IconButton
+                      icon="chevron-forward"
+                      label={`Open full day detail for ${dayLabel(selectedDate)}`}
+                      onPress={() => goDay(selectedDate)}
+                      size={15}
+                      hitSlop={8}
+                      style={s.panelOpenBtn}
+                    />
+                  </View>
+                  <RunList
+                    cell={cellFor(selectedDate)}
+                    today={today}
+                    paceMinPerKm={pace}
+                    onPressRun={() => setDetailDate(selectedDate)}
+                  />
+                </View>
+              ) : null}
+            </GlassCard>
+          )}
+          {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
+            <Empty
+              message="No events in this window. Sync now, or ask your coach to plan something."
+              icon="calendar-clear-outline"
+            />
+          ) : null}
+        </SlideFadeIn>
+      </View>
+      {wide ? (
+        <DetailSidePanel
+          date={detailDate}
+          cellFor={cellFor}
+          today={today}
+          progress={panelProgress}
+          onClose={() => setDetailDate(null)}
+        />
+      ) : null}
+    </Animated.View>
+  );
+
   return (
     <View style={s.page}>
-      {/* scrolling body — the hero scrolls with the sheet so small viewports
-          keep full access to the day rows */}
-      <ScrollView
-        ref={scrollRef}
-        style={s.scroll}
-        contentContainerStyle={[
-          s.scrollContent,
-          {
-            paddingTop: insets.top + spacing.sm + pageSpacing.navToContent,
-            // desktop: reserve room for the detail side panel (the window row
-            // itself animates 860 → 860+panel as the panel opens)
-            maxWidth: wide ? layout.maxW + PANEL_W + spacing.lg : layout.maxW,
-          },
-        ]}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={s.section}>
-          {/* ONE hero surface: controls + tile strip + verdict + drawer */}
-          <View>
-            <HeroCard
-              view={view}
-              title={navTitle}
-              scopeLabel={scopeLabel}
-              onPrev={() => step(-1)}
-              onNext={() => step(1)}
-              onToday={goToday}
-              onView={setView}
-              onSync={() => void onSync()}
-              syncing={syncing}
-              freshness={lastSync ? relativeTime(lastSync) : null}
-              onFreshnessPress={() => router.push('/settings')}
-              stats={view === 'week' ? stats : monthStats}
-              showZones={view === 'week'}
-              wellness={wellness.data ?? []}
-              wellnessLoading={!wellness.data && (wellness.isLoading || wellness.isFetching)}
-              today={today}
-              currentWeek={{
-                events: live.data?.events ?? [],
-                activities: live.data?.activities ?? [],
-                horizonLabel: sundayLabel,
-              }}
-            />
-            {syncMsg ? (
-              <Text style={s.syncMsg} numberOfLines={1}>
-                {syncMsg}
-              </Text>
-            ) : null}
+      {wide ? (
+        <ScrollView
+          ref={scrollRef}
+          style={s.scroll}
+          contentContainerStyle={[
+            s.scrollContent,
+            {
+              paddingTop: insets.top + spacing.sm + pageSpacing.navToContent,
+              // desktop: reserve room for the detail side panel (the window row
+              // itself animates 860 -> 860+panel as the panel opens)
+              maxWidth: layout.maxW + PANEL_W + spacing.lg,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={s.section}>
+            {heroBlock}
+            {windowBlock}
           </View>
-
-          <Animated.View style={[s.windowRow, { maxWidth: rowMax }]}>
-            <View style={s.windowCol}>
-              <SlideFadeIn dep={navKey} direction={dir}>
-                {firstLoad ? (
-                  <Loading label="Loading calendar…" />
-                ) : isError ? (
-                  <ErrorBox
-                    message={`Could not load calendar: ${(error as Error)?.message ?? 'error'}`}
-                    onRetry={() => void refetch()}
-                  />
-                ) : view === 'week' ? (
-                  /* ONE surface: day pills + titled day cards (hairline-separated) */
-                  <GlassCard style={s.weekGroup} testID="week-group">
-                    <DayStrip
-                      dates={weekDatesList}
-                      cellOf={(d) => cells.get(d)}
-                      today={today}
-                      selected={selectedDate}
-                      onSelect={onPillSelect}
-                    />
-                    <View style={s.rowSep} />
-                    {weekDatesList.map((date, i) => (
-                      <Fragment key={date}>
-                        {i > 0 ? <View style={s.rowSep} /> : null}
-                        <View
-                          ref={(v) => {
-                            cardRefs.current.set(date, v);
-                          }}
-                          onLayout={noteCardLayout(date)}
-                        >
-                          <DayCard
-                            date={date}
-                            cell={cellFor(date)}
-                            today={today}
-                            paceMinPerKm={pace}
-                            selected={selectedDate === date}
-                            onOpen={setDetailDate}
-                          />
-                        </View>
-                      </Fragment>
-                    ))}
-                  </GlassCard>
-                ) : (
-                  <GlassCard style={s.monthCard} testID="month-card">
-                    <View style={s.monthHeaderRow}>
-                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-                        <Text key={d} style={s.monthDow}>
-                          {d}
-                        </Text>
-                      ))}
-                    </View>
-                    {grid.weeks.map((w) => (
-                      <View key={w[0]} style={s.monthWeekRow}>
-                        {w.map((date) => {
-                          const cell = cellFor(date);
-                          return (
-                            <MonthCell
-                              key={date}
-                              date={date}
-                              cell={cell}
-                              inMonth={isInMonth(date, monthAnc)}
-                              today={date === today}
-                              selected={selectedDate === date}
-                              onSelect={() => setSelectedDate(date)}
-                              onOpen={() => goDay(date)}
-                            />
-                          );
-                        })}
-                      </View>
-                    ))}
-                    {/* FIX-12 legend: planned / recorded / race are eye-distinguishable */}
-                    <View style={s.legendRow}>
-                      <LegendDot kind="plan" />
-                      <Text style={s.legendText}>planned</Text>
-                      <LegendDot kind="done" />
-                      <Text style={s.legendText}>recorded</Text>
-                      <LegendDot kind="race" />
-                      <Text style={s.legendText}>race</Text>
-                    </View>
-                    {/* selected-day panel: the day's runs BELOW the grid, no navigation */}
-                    {selectedDate ? (
-                      <View style={s.dayPanel}>
-                        <View style={s.rowSep} />
-                        <View style={s.panelHead}>
-                          <Text style={s.panelTitle}>
-                            {`${dayLabel(selectedDate)} ${MONTHS[Number(selectedDate.slice(5, 7)) - 1]!.slice(0, 3)}`}
-                          </Text>
-                          {selectedDate === today ? <Badge label="today" tone="accent" /> : null}
-                          <View style={s.spring} />
-                          <IconButton
-                            icon="chevron-forward"
-                            label={`Open full day detail for ${dayLabel(selectedDate)}`}
-                            onPress={() => goDay(selectedDate)}
-                            size={15}
-                            hitSlop={8}
-                            style={s.panelOpenBtn}
-                          />
-                        </View>
-                        <RunList
-                          cell={cellFor(selectedDate)}
-                          today={today}
-                          paceMinPerKm={pace}
-                          onPressRun={() => setDetailDate(selectedDate)}
-                        />
-                      </View>
-                    ) : null}
-                  </GlassCard>
-                )}
-                {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
-                  <Empty
-                    message="No events in this window. Sync now, or ask your coach to plan something."
-                    icon="calendar-clear-outline"
-                  />
-                ) : null}
-              </SlideFadeIn>
-            </View>
-            {wide ? (
-              <DetailSidePanel
-                date={detailDate}
-                cellFor={cellFor}
-                today={today}
-                progress={panelProgress}
-                onClose={() => setDetailDate(null)}
-              />
-            ) : null}
-          </Animated.View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      ) : (
+        <>
+          {/* pinned hero: pills/verdict stay put; only the day rows scroll */}
+          <View style={[s.pinnedHead, { paddingTop: insets.top + spacing.sm + pageSpacing.navToContent }]}>
+            <View style={s.pinnedInner}>{heroBlock}</View>
+          </View>
+          <ScrollView
+            ref={scrollRef}
+            style={s.scroll}
+            contentContainerStyle={[
+              s.scrollContent,
+              s.scrollContentMobile,
+              { paddingTop: pageSpacing.cardGap },
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
+            {windowBlock}
+          </ScrollView>
+        </>
+      )}
       {/* mobile + native: the same detail as a bottom sheet (spec §3) */}
       {!wide && detailDate ? (
         <DetailSheet date={detailDate} cellFor={cellFor} today={today} onClose={() => setDetailDate(null)} />
@@ -553,6 +585,17 @@ const styles = (p: Palette) =>
       paddingRight: spacing.lg,
       paddingBottom: spacing.xxxl + layout.tabBarHeight,
     },
+    // mobile (<900px): cards run nearly edge-to-edge (owner round 18) — a few
+    // px of gutter, the surfaces' own padding does the rest
+    scrollContentMobile: { paddingHorizontal: spacing.xs },
+    // pinned hero head (mobile): fixed above the scrolling window container
+    pinnedHead: {
+      width: '100%',
+      maxWidth: layout.maxW,
+      alignSelf: 'center',
+      paddingHorizontal: spacing.xs,
+    },
+    pinnedInner: { gap: pageSpacing.sectionGap },
     // the section stack: hero (static) + sliding window sheet (+ detail panel)
     section: { gap: pageSpacing.sectionGap },
     windowRow: {
@@ -564,6 +607,9 @@ const styles = (p: Palette) =>
     windowCol: { flex: 1, minWidth: 0 },
     // --- week sheet: ONE containing card, pills + hairline-separated cards ---
     weekGroup: { paddingVertical: pageSpacing.cardGap / 2, overflow: 'hidden' },
+    // mobile (<900px) only: container padding 12, gap 0 — day sections carry
+    // the rhythm themselves (calendar-week-mobile-spec v2.1 §4)
+    weekGroupCompact: { paddingHorizontal: spacing.md, gap: 0 },
     rowSep: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: p.border,

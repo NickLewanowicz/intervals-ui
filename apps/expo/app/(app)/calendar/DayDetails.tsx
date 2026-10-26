@@ -40,7 +40,7 @@ function StatusBadge({ status, category }: { status: RunStatus; category?: strin
 }
 
 /** Recorded session: metric grid + dominant-zone callout + zone-times bar. */
-function RecordedBlock({ activity }: { activity: Activity }) {
+function RecordedBlock({ activity, cols }: { activity: Activity; cols?: 2 | 3 | 4 }) {
   const { colors } = useTheme();
   const s = styles(colors);
   const zoneSeconds = useMemo(() => zoneSecondsOf(activity), [activity]);
@@ -58,7 +58,7 @@ function RecordedBlock({ activity }: { activity: Activity }) {
           <Text style={[s.actualZone, { color: zoneColor(colors, zone) }]}>mostly {zone}</Text>
         ) : null}
       </View>
-      <MetricGrid metrics={recordedMetricCells(activity)} />
+      <MetricGrid metrics={recordedMetricCells(activity)} cols={cols} />
       {total > 0 ? (
         <>
           {/* FIX-4: proportional stacked bar, cool-to-hot by zone */}
@@ -86,9 +86,17 @@ function RecordedBlock({ activity }: { activity: Activity }) {
 export default function DayDetails({
   cell,
   today,
+  dense,
 }: {
   cell: DayCell;
   today: string;
+  /**
+   * Space-efficient expanded state (owner round 18): the mobile detail sheet
+   * passes `dense` — recorded metrics render 3-across instead of the 2×N
+   * grid, and the raw description block is skipped when the WorkoutTimeline
+   * already renders the same text. Other surfaces keep the round-13 look.
+   */
+  dense?: boolean;
 }) {
   const { colors } = useTheme();
   const s = styles(colors);
@@ -126,8 +134,8 @@ export default function DayDetails({
               {[timeLabel(e.start_date_local), e.type].filter(Boolean).join(' · ')}
             </Text>
             {e.description && training ? <WorkoutTimeline description={e.description} /> : null}
-            {e.description ? <Text style={s.description}>{e.description}</Text> : null}
-            {actual ? <RecordedBlock activity={actual} /> : null}
+            {e.description && !(dense && training) ? <Text style={s.description}>{e.description}</Text> : null}
+            {actual ? <RecordedBlock activity={actual} cols={dense ? 3 : undefined} /> : null}
           </View>
         );
       })}
@@ -142,7 +150,7 @@ export default function DayDetails({
           <Text style={s.meta}>
             {[timeLabel(a.start_date_local), a.source].filter(Boolean).join(' · ')}
           </Text>
-          <RecordedBlock activity={a} />
+          <RecordedBlock activity={a} cols={dense ? 3 : undefined} />
         </View>
       ))}
     </View>

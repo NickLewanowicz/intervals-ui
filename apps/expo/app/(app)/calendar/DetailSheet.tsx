@@ -153,7 +153,8 @@ export default function DetailSheet({
             keyboardShouldPersistTaps="handled"
           >
             <SlideFadeIn key={date} dep={date} direction={0}>
-              <DayDetails cell={cellFor(date)} today={today} />
+              {/* dense: tighter expanded state on mobile (owner round 18) */}
+              <DayDetails cell={cellFor(date)} today={today} dense />
             </SlideFadeIn>
           </ScrollView>
         </Animated.View>

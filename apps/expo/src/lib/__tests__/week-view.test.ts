@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Activity, DayCell, EventEx } from '@intervals/core';
 import {
+  compactRollupText,
+  compactStatCells,
   dayPills,
   dayRollup,
   dayRunModels,
@@ -199,6 +201,67 @@ describe('dayRollup + rollupChips', () => {
     const r = dayRollup({ date: '2026-10-20', events: [], activities: [] });
     expect(r.rest).toBe(true);
     expect(rollupChips(r)).toEqual([]);
+  });
+});
+
+describe('compactRollupText (mobile header, calendar-week-mobile-spec §1)', () => {
+  it('joins distance + bare load and drops the run count', () => {
+    const r = dayRollup({
+      date: '2026-10-20',
+      events: [ev({ id: 7, icu_training_load: 60 })],
+      activities: [act({ paired_event_id: 7, distance: 10_500, moving_time: 3000, icu_training_load: 108 })],
+    });
+    expect(compactRollupText(r)).toBe('10.5km · 108');
+  });
+
+  it('keeps ≈ on pace-estimated halves and omits zero load', () => {
+    const r = dayRollup(
+      { date: '2026-10-21', events: [ev({ id: 1, moving_time: 3600 })], activities: [] },
+      { paceMinPerKm: 5 },
+    );
+    expect(compactRollupText(r)).toBe('≈12.0km');
+  });
+
+  it('falls back to time when no distance is knowable', () => {
+    const r = dayRollup(
+      { date: '2026-10-21', events: [ev({ id: 1, moving_time: 3600, icu_training_load: 42 })], activities: [] },
+      { paceMinPerKm: null },
+    );
+    expect(compactRollupText(r)).toBe('1h00m · 42');
+  });
+
+  it('is null for a rest day (the header shows the rest line instead)', () => {
+    expect(compactRollupText(dayRollup({ date: '2026-10-20', events: [], activities: [] }))).toBeNull();
+  });
+});
+
+describe('compactStatCells (mobile run row line 2, spec §2)', () => {
+  it('keeps distance/time/load and drops pace+hr (they stay in the detail sheet)', () => {
+    const m = runCardModel(
+      ev({ id: 7 }),
+      act({
+        paired_event_id: 7,
+        distance: 8800,
+        moving_time: 2880,
+        pace: 5.45,
+        average_heartrate: 156.2,
+        icu_training_load: 92,
+      }),
+      { today: TODAY },
+    );
+    expect(compactStatCells(m.metrics).map((c) => c.id)).toEqual(['distance', 'time', 'load']);
+  });
+
+  it('preserves the estimated flag for the ≈ mark', () => {
+    const m = runCardModel(
+      ev({ id: 8, start_date_local: '2026-10-23T06:15:00', moving_time: 3600 }),
+      null,
+      { today: TODAY, paceMinPerKm: 5 },
+    );
+    expect(compactStatCells(m.metrics)).toEqual([
+      { id: 'distance', label: 'Distance', value: '12.0km', estimated: true },
+      { id: 'time', label: 'Time', value: '1h00m', estimated: false },
+    ]);
   });
 });
 
