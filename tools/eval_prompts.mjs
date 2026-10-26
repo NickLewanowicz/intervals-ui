@@ -157,6 +157,17 @@ for (const file of files) {
     checks.push({ ok: text.toLowerCase().includes(s.toLowerCase()), label: `mentions "${s}"` });
   }
 
+  // bundle coherence: only when the fixture EXPECTS a bundle (multi-week
+  // plans are deliberately unbundled — sessions stay individually steerable)
+  if (expect.bundle && validated.length >= 2) {
+    const bundled = validated.filter((p) => p.bundle);
+    const keys = new Set(bundled.map((p) => (p.bundle ? p.bundle.key : '')));
+    checks.push({
+      ok: bundled.length === validated.length && keys.size === 1,
+      label: `bundle coherence: ${bundled.length}/${validated.length} bundled, ${keys.size} distinct key(s)`,
+    });
+  }
+
   const usage = data.usage ?? {};
   results.push({
     fixture: file,

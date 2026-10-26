@@ -279,8 +279,10 @@ await upsertCollection({
     num('intervals_event_id'),
     text('error', 1000),
     text('applied_at', 40),
+    text('bundle_key', 140),
+    text('bundle_summary', 200),
   ],
-  indexes: ['CREATE INDEX idx_prop_user_status ON proposals (user, status, created)'],
+  indexes: ['CREATE INDEX idx_prop_user_status ON proposals (user, status, created)', 'CREATE INDEX idx_prop_user_bundle ON proposals (user, bundle_key)'],
   ...OWNER_READ,
   ...OWNER_CREATE,
 });

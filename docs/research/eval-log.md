@@ -239,3 +239,59 @@ before shipping any v3 prompt edit.
 - ✅ schedule-shakeout.json
 - ✅ totals-discipline.json
 - ✅ update-not-delete.json
+
+## 2026-10-25T23:14:24.847Z — z-ai/glm-5.3-flash (11 fixtures, FAILURES)
+- tokens: 76668 in / 3821 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ goal-time-vdot.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ❌ trim-the-week.json: mentions "147703001"; mentions "147703002"
+- ✅ update-not-delete.json
+
+## 2026-10-25T23:15:55.207Z — z-ai/glm-5.3-flash (11 fixtures, FAILURES)
+- tokens: 76668 in / 3488 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ goal-time-vdot.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ❌ plan-10k-3weeks.json: bundle coherence: 0/7 bundled, 0 distinct key(s)
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ❌ trim-the-week.json: mentions "trim"
+- ✅ update-not-delete.json
+
+## 2026-10-25T23:16:38.864Z — z-ai/glm-5.3-flash (11 fixtures, FAILURES)
+- tokens: 76668 in / 3674 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ goal-time-vdot.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ❌ plan-10k-3weeks.json: bundle coherence: 0/8 bundled, 0 distinct key(s)
+- ✅ race-plan.json
+- ✅ schedule-shakeout.json
+- ✅ totals-discipline.json
+- ✅ trim-the-week.json
+- ✅ update-not-delete.json
+
+## 2026-10-25T23:17:15.383Z — z-ai/glm-5.3-flash (11 fixtures, FAILURES)
+- tokens: 76668 in / 3262 out
+- ✅ fatigue-red-flag.json
+- ✅ feedback-week.json
+- ✅ goal-time-vdot.json
+- ✅ medical-red-flag.json
+- ✅ move-session.json
+- ✅ plan-10k-3weeks.json
+- ✅ race-plan.json
+- ❌ schedule-shakeout.json: proposal create_event/WORKOUT on 2026-11-02 MISSING
+- ✅ totals-discipline.json
+- ✅ trim-the-week.json
+- ✅ update-not-delete.json

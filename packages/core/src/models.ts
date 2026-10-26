@@ -56,6 +56,15 @@ export const COACH_TOOLS: OpenRouterTool[] = [
           distance: { type: 'number', description: 'Total distance in meters' },
           moving_time: { type: 'number', description: 'Total duration in seconds' },
           rationale: { type: 'string', description: 'One sentence why this session' },
+          bundle: {
+            type: 'object',
+            description:
+              'Grouping for related changes made for ONE holistic reason. Include the SAME short summary on every related call in this reply; omit for single unrelated changes.',
+            properties: {
+              summary: { type: 'string', description: 'Short shared label, e.g. "Rebuild week — cutting easy volume"' },
+            },
+          },
+
         },
       },
     },
@@ -78,6 +87,15 @@ export const COACH_TOOLS: OpenRouterTool[] = [
           moving_time: { type: 'number' },
           category: { type: 'string', enum: ['WORKOUT', 'RACE_A', 'RACE_B', 'RACE_C'] },
           rationale: { type: 'string' },
+          bundle: {
+            type: 'object',
+            description:
+              'Grouping for related changes made for ONE holistic reason. Include the SAME short summary on every related call in this reply; omit for single unrelated changes.',
+            properties: {
+              summary: { type: 'string', description: 'Short shared label, e.g. "Rebuild week — cutting easy volume"' },
+            },
+          },
+
         },
       },
     },
@@ -93,6 +111,15 @@ export const COACH_TOOLS: OpenRouterTool[] = [
         properties: {
           id: { type: 'number' },
           rationale: { type: 'string' },
+          bundle: {
+            type: 'object',
+            description:
+              'Grouping for related changes made for ONE holistic reason. Include the SAME short summary on every related call in this reply; omit for single unrelated changes.',
+            properties: {
+              summary: { type: 'string', description: 'Short shared label, e.g. "Rebuild week — cutting easy volume"' },
+            },
+          },
+
         },
       },
     },

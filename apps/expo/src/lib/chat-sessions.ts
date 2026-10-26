@@ -152,7 +152,7 @@ export interface TurnRef {
  */
 export function attachProposals(
   turns: TurnRef[],
-  proposals: Array<{ id: string; created?: string }>,
+  proposals: Array<{ id: string; created?: string | null }>,
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   const lastAssistant = [...turns].reverse().find((t) => t.role === 'assistant');

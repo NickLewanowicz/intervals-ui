@@ -27,6 +27,9 @@ export interface Proposal<P = unknown> {
   status: 'pending' | 'applied' | 'dismissed' | 'failed';
   intervals_event_id?: number;
   error?: string;
+  /** Grouping for related changes made for one holistic reason (v2). */
+  bundleKey?: string;
+  bundleSummary?: string;
 }
 
 export class ProposalValidationError extends Error {
@@ -102,9 +105,24 @@ export function validateProposal(toolName: string, args: unknown): {
   kind: ProposalKind;
   payload: EventEx;
   rationale?: string;
+  bundle?: { key: string; summary: string };
 } {
   const a = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>;
   const rationale = typeof a.rationale === 'string' ? a.rationale : undefined;
+
+  // Optional bundle: { summary } — groups related changes made for one
+  // holistic reason. Normalized to a grouping key (exact, case-insensitive).
+  // Stripped from EventEx args so it never reaches intervals.icu.
+  let bundle: { key: string; summary: string } | undefined;
+  const rawBundle = (a.bundle ?? null) as { summary?: unknown } | null | undefined;
+  if (rawBundle && typeof rawBundle.summary === 'string' && rawBundle.summary.trim()) {
+    const summary = rawBundle.summary.trim().slice(0, 120);
+    bundle = {
+      summary,
+      key: summary.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'bundle',
+    };
+    delete a.bundle;
+  }
 
   switch (toolName) {
     case 'propose_event':
@@ -117,19 +135,19 @@ export function validateProposal(toolName: string, args: unknown): {
         // races without a known distance are allowed, but flag for the user
         // (validation stays soft — the modal shows what will be written)
       }
-      return { kind: 'create_event', payload: event, rationale };
+      return { kind: 'create_event', payload: event, rationale, ...(bundle ? { bundle } : {}) };
     }
     case 'update_event': {
       const event = validateEventEx(a.event ?? a, false);
       if (event.id === undefined && event.uid === undefined) {
         fail('event.id|event.uid', 'update needs the intervals.icu event id or uid');
       }
-      return { kind: 'update_event', payload: event, rationale };
+      return { kind: 'update_event', payload: event, rationale, ...(bundle ? { bundle } : {}) };
     }
     case 'delete_event': {
       const event = validateEventEx(a.event ?? a, false);
       if (event.id === undefined) fail('event.id', 'delete needs the event id');
-      return { kind: 'delete_event', payload: event, rationale };
+      return { kind: 'delete_event', payload: event, rationale, ...(bundle ? { bundle } : {}) };
     }
     default:
       fail('tool', `unknown proposal tool "${toolName}"`);

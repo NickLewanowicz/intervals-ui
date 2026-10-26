@@ -110,6 +110,12 @@ export default {
     if (url.pathname === '/api/chat' && request.method === 'POST') return chat(request, env, user, cors);
     if (url.pathname === '/api/sync' && request.method === 'POST') return manualSync(env, user, cors);
     if (url.pathname === '/api/proposals' && request.method === 'GET') return listProposals(env, user, url, cors);
+    if (url.pathname === '/api/proposals/apply-batch' && request.method === 'POST') {
+      return batchAction(request, env, user, cors, 'apply');
+    }
+    if (url.pathname === '/api/proposals/dismiss-batch' && request.method === 'POST') {
+      return batchAction(request, env, user, cors, 'dismiss');
+    }
     const proposalMatch = url.pathname.match(/^\/api\/proposals\/([\w]+)\/(apply|dismiss)$/);
     if (proposalMatch && request.method === 'POST') {
       return proposalAction(proposalMatch[1]!, proposalMatch[2] as 'apply' | 'dismiss', env, user, cors);
@@ -455,7 +461,10 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
             continue;
           }
           try {
-            const { kind, payload, rationale } = validateProposal(tc.name, args);
+            const { kind, payload, rationale, bundle } = validateProposal(tc.name, args);
+            if (typeof payload.description === 'string') {
+              payload.description = payload.description.replace(/\s*\|\s*/g, '\n');
+            }
             const proposal = await createRecord(env, 'proposals', {
               user: user.id,
               session: sessionIdFinal,
@@ -463,8 +472,16 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
               payload,
               rationale: rationale ?? null,
               status: 'pending',
+              bundle_key: bundle?.key ?? null,
+              bundle_summary: bundle?.summary ?? null,
             });
-            send('proposal', { id: proposal.id, kind, payload, rationale });
+            send('proposal', {
+              id: proposal.id,
+              kind,
+              payload,
+              rationale,
+              bundle: bundle ? { key: bundle.key, summary: bundle.summary } : null,
+            });
           } catch (e) {
             if (e instanceof ProposalValidationError) {
               proposalErrors.push({ tool: tc.name, error: e.message });
@@ -493,4 +510,90 @@ async function chat(request: Request, env: Env, user: PbUser, cors: Record<strin
       ...cors,
     },
   });
+}
+
+/** Owner-scoped batch apply/dismiss. Applies in order; reports per-id results. */
+async function batchAction(
+  request: Request,
+  env: Env,
+  user: PbUser,
+  cors: Record<string, string>,
+  action: 'apply' | 'dismiss',
+): Promise<Response> {
+  let body: { ids?: unknown };
+  try {
+    body = (await request.json()) as { ids?: unknown };
+  } catch {
+    return json({ error: 'bad_json' }, 400, cors);
+  }
+  const ids = Array.isArray(body.ids) ? body.ids.filter((i): i is string => typeof i === 'string') : [];
+  if (!ids.length || ids.length > 25) return json({ error: 'ids_required_1_to_25' }, 400, cors);
+
+  const results: Array<{ id: string; ok: boolean; status?: string; error?: string; intervals_event_id?: number }> = [];
+  if (action === 'dismiss') {
+    for (const id of ids) {
+      try {
+        const record = await getFirst(env, 'proposals', `${byUser(user.id)} && id="${id}"`);
+        if (!record || record.status !== 'pending') {
+          results.push({ id, ok: false, error: record ? 'already_resolved' : 'not_found' });
+          continue;
+        }
+        await updateRecord(env, 'proposals', id, { status: 'dismissed' });
+        results.push({ id, ok: true, status: 'dismissed' });
+      } catch (e) {
+        results.push({ id, ok: false, error: String(e).slice(0, 200) });
+      }
+    }
+    return json({ ok: results.every((r) => r.ok), results }, 200, cors);
+  }
+
+  if (!user.intervals_api_key) return json({ error: 'missing_intervals_key' }, 400, cors);
+  const client = createIntervalsClient({
+    apiKey: user.intervals_api_key,
+    athleteId: user.intervals_athlete_id || '0',
+  });
+  for (const id of ids) {
+    try {
+      const record = await getFirst(env, 'proposals', `${byUser(user.id)} && id="${id}"`);
+      if (!record || record.status !== 'pending') {
+        results.push({ id, ok: false, error: record ? 'already_resolved' : 'not_found' });
+        continue;
+      }
+      const kind = String(record.kind) as 'create_event' | 'update_event' | 'delete_event';
+      const payload = (record.payload ?? {}) as Record<string, unknown>;
+      let eventId: number | undefined;
+      if (kind === 'create_event') {
+        const body = {
+          ...payload,
+          uid:
+            (payload.uid as string) ??
+            coachUid(user.id + ':' + String(record.session ?? ''), String(payload.start_date_local) + String(payload.name)),
+        } as unknown as import('@intervals/core').EventEx;
+        const created = await client.createEvent(body, true);
+        eventId = created?.id;
+      } else if (kind === 'update_event') {
+        const eventIdNum = payload.id as number;
+        const up = { ...payload };
+        delete up.id;
+        delete up.uid;
+        await client.updateEvent(eventIdNum, up);
+        eventId = eventIdNum;
+      } else {
+        await client.deleteEvent(payload.id as number);
+        eventId = payload.id as number;
+      }
+      await updateRecord(env, 'proposals', id, {
+        status: 'applied',
+        intervals_event_id: eventId ?? null,
+        applied_at: new Date().toISOString(),
+      });
+      results.push({ id, ok: true, status: 'applied', intervals_event_id: eventId });
+    } catch (e) {
+      await updateRecord(env, 'proposals', id, { status: 'failed', error: String(e).slice(0, 400) }).catch(() => {});
+      results.push({ id, ok: false, error: String(e).slice(0, 200) });
+    }
+  }
+  // refresh the mirror once after the batch (best effort)
+  syncUser(env, user.id, user.intervals_api_key!, user.intervals_athlete_id || undefined).catch(() => {});
+  return json({ ok: results.every((r) => r.ok), results }, 200, cors);
 }

@@ -167,4 +167,13 @@ export interface Proposal {
   payload: EventEx;
   rationale: string | null;
   status?: string;
+  /** PB `created` stamp — oldest-first ordering for grouped review. */
+  created?: string | null;
+  /**
+   * Bundle grouping (proposal-approval v2 §2): set when the coach proposed
+   * this change as part of one holistic reason. 2+ pending rows sharing
+   * `bundleKey` review together in the bundle sheet.
+   */
+  bundleKey?: string | null;
+  bundleSummary?: string | null;
 }

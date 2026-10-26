@@ -136,15 +136,22 @@ export async function streamChat(opts: ChatStreamOptions & ChatStreamEvent): Pro
       case 'delta':
         if (typeof data.text === 'string') opts.onDelta(data.text);
         break;
-      case 'proposal':
+      case 'proposal': {
+        // v2: the worker threads the validated tool-arg bundle through the SSE
+        // event ({ key, summary } | null) so bundled proposals can group live.
+        const bundle = (data.bundle ?? null) as { key?: unknown; summary?: unknown } | null;
         opts.onProposal({
           id: String(data.id ?? ''),
           kind: (data.kind as ProposalKind) ?? 'create_event',
           payload: (data.payload ?? {}) as EventEx,
           rationale: typeof data.rationale === 'string' ? data.rationale : null,
           status: 'pending',
+          created: new Date().toISOString(),
+          bundleKey: bundle && typeof bundle.key === 'string' ? bundle.key : null,
+          bundleSummary: bundle && typeof bundle.summary === 'string' ? bundle.summary : null,
         });
         break;
+      }
       case 'done':
         opts.onDone({
           session_id: String(data.session_id ?? ''),
@@ -181,6 +188,10 @@ export async function listProposals(status = 'pending'): Promise<Proposal[]> {
     payload: (r.payload ?? {}) as EventEx,
     rationale: typeof r.rationale === 'string' ? r.rationale : null,
     status: typeof r.status === 'string' ? r.status : undefined,
+    created: typeof r.created === 'string' ? r.created : null,
+    bundleKey: typeof r.bundle_key === 'string' && r.bundle_key !== '' ? r.bundle_key : null,
+    bundleSummary:
+      typeof r.bundle_summary === 'string' && r.bundle_summary !== '' ? r.bundle_summary : null,
   }));
 }
 
@@ -198,6 +209,90 @@ export async function dismissProposal(id: string): Promise<Proposal> {
     { method: 'POST' },
   );
   return { ...(res.proposal as unknown as Proposal) };
+}
+
+// ---------- batch proposals (proposal-approval v2 §2) ----------
+
+export interface BatchItemResult {
+  id: string;
+  ok: boolean;
+  status?: string;
+  error?: string;
+}
+
+export interface BatchOutcome {
+  /** true only when EVERY id resolved — partial failures still return results. */
+  ok: boolean;
+  results: BatchItemResult[];
+}
+
+function mapBatchResults(rows: Array<Record<string, unknown>> | undefined): BatchItemResult[] {
+  return (rows ?? []).map((r) => ({
+    id: String(r.id ?? ''),
+    ok: r.ok === true,
+    status: typeof r.status === 'string' ? r.status : undefined,
+    error: typeof r.error === 'string' ? r.error : undefined,
+  }));
+}
+
+/**
+ * POST /api/proposals/apply-batch — owner-scoped; the worker validates each id
+ * belongs to the caller, applies sequentially with the user's own intervals.icu
+ * key, and reports per-id results (stops-for-nothing: failures mark the row
+ * `failed` and the batch continues). Mirror re-sync happens worker-side.
+ *
+ * Deploy-window fallback: a worker predating v7 404s the batch routes — those
+ * deployments still expose the single-item endpoints, so the bundle sheet must
+ * keep working: degrade to sequential single calls and aggregate the same
+ * per-id result shape. (The worker-side post-batch mirror re-sync is skipped
+ * in that path; the callers' calendar invalidation covers the UI until the
+ * next sync.)
+ */
+export async function applyBatch(ids: string[]): Promise<BatchOutcome> {
+  if (!ids.length) return { ok: true, results: [] };
+  try {
+    const res = await workerJson<{ ok: boolean; results?: Array<Record<string, unknown>> }>(
+      '/api/proposals/apply-batch',
+      { method: 'POST', body: JSON.stringify({ ids }) },
+    );
+    return { ok: res.ok === true, results: mapBatchResults(res.results) };
+  } catch (e) {
+    if (e instanceof WorkerError && e.status === 404) return sequentialBatch(ids, 'apply');
+    throw e;
+  }
+}
+
+/** POST /api/proposals/dismiss-batch — same contract, no intervals.icu writes. */
+export async function dismissBatch(ids: string[]): Promise<BatchOutcome> {
+  if (!ids.length) return { ok: true, results: [] };
+  try {
+    const res = await workerJson<{ ok: boolean; results?: Array<Record<string, unknown>> }>(
+      '/api/proposals/dismiss-batch',
+      { method: 'POST', body: JSON.stringify({ ids }) },
+    );
+    return { ok: res.ok === true, results: mapBatchResults(res.results) };
+  } catch (e) {
+    if (e instanceof WorkerError && e.status === 404) return sequentialBatch(ids, 'dismiss');
+    throw e;
+  }
+}
+
+/** Batch semantics over the single-item endpoints (pre-v7 worker fallback). */
+async function sequentialBatch(ids: string[], action: 'apply' | 'dismiss'): Promise<BatchOutcome> {
+  const results: BatchItemResult[] = [];
+  for (const id of ids) {
+    try {
+      const row = action === 'apply' ? await applyProposal(id) : await dismissProposal(id);
+      results.push({ id, ok: true, status: row.status ?? (action === 'apply' ? 'applied' : 'dismissed') });
+    } catch (e) {
+      results.push({
+        id,
+        ok: false,
+        error: e instanceof WorkerError ? e.message : String(e).slice(0, 200),
+      });
+    }
+  }
+  return { ok: results.every((r) => r.ok), results };
 }
 
 // ---------- sync ----------

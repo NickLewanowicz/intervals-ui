@@ -90,3 +90,32 @@ describe('coachUid', () => {
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 });
+
+describe('validateProposal — bundles', () => {
+  it('extracts and normalizes the bundle, stripping it from the payload', () => {
+    const p = validateProposal('update_event', {
+      id: 147702972,
+      name: 'Aerobic maintenance 6km',
+      bundle: { summary: 'Rebuild Week — Cutting Easy Volume' },
+      rationale: '9km → 6km; rebuild week',
+    });
+    expect(p.bundle).toEqual({
+      key: 'rebuild-week-cutting-easy-volume',
+      summary: 'Rebuild Week — Cutting Easy Volume',
+    });
+    expect((p.payload as unknown as Record<string, unknown>).bundle).toBeUndefined();
+  });
+
+  it('omits bundle when absent or empty', () => {
+    expect(validateProposal('update_event', { id: 1, name: 'x' }).bundle).toBeUndefined();
+    expect(
+      validateProposal('update_event', { id: 1, name: 'x', bundle: { summary: '   ' } }).bundle,
+    ).toBeUndefined();
+  });
+
+  it('bundle key groups case-insensitively', () => {
+    const a = validateProposal('update_event', { id: 1, bundle: { summary: 'Rebuild Week' } });
+    const b = validateProposal('update_event', { id: 2, bundle: { summary: 'rebuild week' } });
+    expect(a.bundle!.key).toBe(b.bundle!.key);
+  });
+});

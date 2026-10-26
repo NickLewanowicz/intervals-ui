@@ -5,15 +5,20 @@
  * spring (motion spec); action verb + icon + category chip so the change
  * reads unambiguously (V-04).
  *
- * Round-5 (persona finding #1): updates render a before→after diff against
- * the PB mirror (old → new rows, only what changes), titles are human
- * ("Update Recovery jog", never "Update calendar entry #147702969" — the raw
- * id stays as tiny muted metadata), and deletes name their target.
+ * Round-14 (proposal-approval-v2 spec §1, modal v3): the coach's rationale is
+ * the FIRST thing — avatar + the readable "why" sentence; distance/duration
+ * changes render as visual DiffBars (shared scale, hatched removed / solid
+ * added); CURRENT and PROPOSED timeline bars compare zones on one width; the
+ * raw description never shows by default (collapsed "View workout text"
+ * disclosure); the name diff stays small under the title; the approve-clause
+ * merges into a single footer sentence and the event id demotes to tiny
+ * bottom metadata.
  */
 import { formatDuration, formatKm } from '@intervals/core';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -23,15 +28,20 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Badge, Button } from '@/components/ui';
+import DiffBar from '@/components/DiffBar';
 import WorkoutTimeline from '@/components/WorkoutTimeline';
+import { PressableScale } from '@/components/motion';
 import { applyProposal, dismissProposal } from '@/lib/api';
 import { useMirroredEvent } from '@/lib/queries';
 import { diffEvent, proposalTitle, type DiffRow } from '@/lib/proposal-diff';
-import { workoutSummaryLine, normalizeDescription } from '@/lib/workout-view';
-import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
+import { diffBarRow, type DiffBarRowModel } from '@/lib/diff-bar-view';
+import { normalizeDescription, planTimeline } from '@/lib/workout-view';
+import { fontSize, layout, lineHeight, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 import type { EventEx } from '@intervals/core';
 import type { Proposal } from '@/lib/records';
+
+const COACH_AVATAR = require('@/assets/coach-avatar.png');
 
 const KIND_ICON: Record<Proposal['kind'], React.ComponentProps<typeof Ionicons>['name']> = {
   create_event: 'add-circle-outline',
@@ -68,6 +78,24 @@ export default function ProposalModal({
     () => (proposal.kind === 'update_event' && before ? diffEvent(before, p) : null),
     [proposal.kind, before, p],
   );
+
+  // v3 §1.2: DiffBar rows for the numeric metric diffs (only what changed).
+  const barRows = useMemo(() => {
+    if (!diff) return [] as DiffBarRowModel[];
+    const rows: DiffBarRowModel[] = [];
+    if (diff.changed.some((r) => r.key === 'distance')) {
+      const row = diffBarRow('distance', before?.distance, p.distance);
+      if (row) rows.push(row);
+    }
+    if (diff.changed.some((r) => r.key === 'duration')) {
+      const row = diffBarRow('duration', before?.moving_time, p.moving_time);
+      if (row) rows.push(row);
+    }
+    return rows;
+  }, [diff, before, p.distance, p.moving_time]);
+
+  // v3 §1.4: the name diff lives small under the title, not in the body.
+  const nameRow = diff?.changed.find((r) => r.key === 'name') ?? null;
 
   // Human title: intent + current name. For updates/deletes prefer the
   // mirror's name (the payload's name may be missing or already rewritten).
@@ -108,6 +136,19 @@ export default function ProposalModal({
         >
           {/* grabber on the sheet form factor */}
           {compact ? <View style={s.grabber} /> : null}
+
+          {/* v3 §1.1 — the coach's "why" is the first thing on the sheet */}
+          {proposal.rationale ? (
+            <View style={s.coachStrip}>
+              <Image
+                source={COACH_AVATAR}
+                style={s.coachAvatar}
+                accessibilityIgnoresInvertColors
+              />
+              <Text style={s.rationale}>{proposal.rationale}</Text>
+            </View>
+          ) : null}
+
           <View style={s.headRow}>
             <View
               style={[
@@ -121,10 +162,11 @@ export default function ProposalModal({
             </View>
             <View style={{ flexShrink: 1 }}>
               <Text style={s.verb}>{title}</Text>
-              {p.id != null && proposal.kind !== 'create_event' ? (
-                <Text style={s.idMeta}>event #{p.id}</Text>
+              {nameRow ? (
+                <Text style={s.nameDiff} numberOfLines={1}>
+                  {nameRow.before ?? '—'} → {nameRow.after ?? '—'}
+                </Text>
               ) : null}
-              <Text style={s.clauses}>You approve every change — this is a proposal, not a write.</Text>
             </View>
           </View>
 
@@ -137,6 +179,7 @@ export default function ProposalModal({
                 failed={mirrored.isError}
                 payload={p}
                 isRace={isRace}
+                barRows={barRows}
               />
             ) : proposal.kind === 'delete_event' ? (
               <DeleteView before={before} payload={p} loading={mirrored.isLoading} />
@@ -144,8 +187,6 @@ export default function ProposalModal({
               <PayloadFields payload={p} isRace={isRace} />
             )}
           </ScrollView>
-
-          {proposal.rationale ? <Text style={s.rationale}>“{proposal.rationale}”</Text> : null}
 
           {error ? <Text style={s.error}>{error}</Text> : null}
 
@@ -168,7 +209,13 @@ export default function ProposalModal({
               style={{ flex: 1 }}
             />
           </View>
-          <Text style={s.hint}>Not sure? Keep chatting to adjust it — nothing is written yet.</Text>
+          <Text style={s.hint}>
+            You approve every change — not sure? Keep chatting to adjust it; nothing is written
+            yet.
+          </Text>
+          {p.id != null && proposal.kind !== 'create_event' ? (
+            <Text style={s.idMeta}>event #{p.id}</Text>
+          ) : null}
         </Pressable>
       </Pressable>
     </Modal>
@@ -198,14 +245,13 @@ function PayloadFields({ payload: p, isRace }: { payload: EventEx; isRace: boole
       {p.distance ? <Field label="Distance" value={formatKm(p.distance)} /> : null}
       {p.moving_time ? <Field label="Duration" value={formatDuration(p.moving_time)} /> : null}
       {p.type ? <Field label="Sport" value={p.type} /> : null}
-      {/* V-05: the brief blurb + the visual — the athlete should SEE the
-          session, not read a monospace text block. Raw text stays on the
-          day detail (runners copy it into intervals.icu). */}
+      {/* V-05: the athlete SEES the session (zone bar), and the raw text
+          stays one tap away — never an always-open "…" concat block. */}
       {p.description ? (
         <View style={s.workoutBlock}>
           <Text style={s.fieldLabel}>Workout</Text>
-          <Text style={s.workoutSummary}>{workoutSummaryLine(p.description)}</Text>
           <WorkoutTimeline description={p.description} />
+          <WorkoutTextDisclosure after={p.description} />
         </View>
       ) : null}
     </>
@@ -213,9 +259,10 @@ function PayloadFields({ payload: p, isRace }: { payload: EventEx; isRace: boole
 }
 
 /**
- * FIX-1a: before→after for an update. Only changed fields render, as
- * `old → new` rows; unchanged fields collapse into a muted context line.
- * Mirror miss/failure shows the proposed state alone — approval never blocks.
+ * FIX-1a + v3 §1: before→after for an update. Distance/duration render as
+ * DiffBars, the workout as a CURRENT/PROPOSED timeline comparison, the name
+ * diff moved under the title; scalar fields stay as old → new rows. Mirror
+ * miss/failure shows the proposed state alone — approval never blocks.
  */
 function UpdateDiff({
   diff,
@@ -224,6 +271,7 @@ function UpdateDiff({
   failed,
   payload,
   isRace,
+  barRows,
 }: {
   diff: ReturnType<typeof diffEvent> | null;
   loading: boolean;
@@ -231,21 +279,27 @@ function UpdateDiff({
   failed: boolean;
   payload: EventEx;
   isRace: boolean;
+  barRows: DiffBarRowModel[];
 }) {
   const { colors } = useTheme();
   const s = styles(colors);
   if (loading) return <Text style={s.diffNote}>Checking the current entry…</Text>;
   if (diff && diff.changed.length > 0) {
+    // name → title area; distance/duration → DiffBars; description → compare
+    const scalar = diff.changed.filter(
+      (r) => !r.isWorkout && r.key !== 'name' && r.key !== 'distance' && r.key !== 'duration',
+    );
+    const workout = diff.changed.find((r) => r.isWorkout) ?? null;
     return (
       <View style={s.diffBlock}>
         <Text style={s.diffTitle}>Changes</Text>
-        {diff.changed.map((row) =>
-          row.isWorkout ? (
-            <WorkoutDiffRow key={row.key} before={row.before} after={row.after} />
-          ) : (
-            <DiffLineRow key={row.key} row={row} />
-          ),
-        )}
+        {barRows.map((row) => (
+          <DiffBar key={row.key} row={row} />
+        ))}
+        {scalar.map((row) => (
+          <DiffLineRow key={row.key} row={row} />
+        ))}
+        {workout ? <WorkoutCompare before={workout.before} after={workout.after} /> : null}
         {diff.unchangedLabels.length > 0 ? (
           <Text style={s.diffNote}>Unchanged: {diff.unchangedLabels.join(', ')}</Text>
         ) : null}
@@ -283,32 +337,84 @@ function DiffLineRow({ row }: { row: DiffRow }) {
   );
 }
 
-/** Description diff: old + new timeline compact, plus the full new text. */
-function WorkoutDiffRow({ before, after }: { before: string | null; after: string | null }) {
+/**
+ * v3 §1.3: the zone-over-time comparison — CURRENT compact timeline above,
+ * PROPOSED below (same width, each labeled with its metric + totals so the
+ * bars read against one another). A side whose text parses to nothing just
+ * doesn't render a bar; the raw text of either side stays available behind
+ * the collapsed "View workout text" disclosure (default closed — the "…"
+ * concatenation never shows by default).
+ */
+function WorkoutCompare({ before, after }: { before: string | null; after: string | null }) {
   const { colors } = useTheme();
   const s = styles(colors);
+  const beforePlan = before ? planTimeline(before) : null;
+  const afterPlan = after ? planTimeline(after) : null;
   return (
-    <View style={s.field}>
-      <Text style={s.fieldLabel}>Workout</Text>
-      {before ? (
+    <View style={s.workoutBlock}>
+      {beforePlan ? (
         <View style={s.workoutSide}>
           <Text style={s.workoutSideLabel}>Current</Text>
-          <Text style={s.workoutSummary}>{workoutSummaryLine(before)}</Text>
-          <WorkoutTimeline description={before} compact />
+          <WorkoutTimeline description={before!} compact />
         </View>
       ) : null}
-      <View style={s.workoutSide}>
-        <Text style={s.workoutSideLabelAccent}>Proposed</Text>
-        {after ? (
-          <>
-            <Text style={s.workoutSummary}>{workoutSummaryLine(after)}</Text>
-            <WorkoutTimeline description={after} compact />
-            <Text style={s.workoutRaw}>{normalizeDescription(after)}</Text>
-          </>
-        ) : (
-          <Text style={s.diffNote}>Workout description removed.</Text>
-        )}
-      </View>
+      {afterPlan ? (
+        <View style={s.workoutSide}>
+          <Text style={s.workoutSideLabelAccent}>Proposed</Text>
+          <WorkoutTimeline description={after!} compact />
+        </View>
+      ) : null}
+      {!beforePlan && !afterPlan ? (
+        <Text style={s.diffNote}>No structured workout to compare — read the raw text below.</Text>
+      ) : null}
+      <WorkoutTextDisclosure before={before} after={after} />
+    </View>
+  );
+}
+
+/** Collapsed raw-description disclosure (v3 §1.3): closed by default. */
+function WorkoutTextDisclosure({
+  before,
+  after,
+}: {
+  before?: string | null;
+  after: string | null;
+}) {
+  const { colors } = useTheme();
+  const s = styles(colors);
+  const [open, setOpen] = useState(false);
+  if (!after && !before) return null;
+  return (
+    <View>
+      <PressableScale
+        onPress={() => setOpen((v) => !v)}
+        accessibilityRole="button"
+        accessibilityLabel={open ? 'Hide workout text' : 'View workout text'}
+        style={s.disclosureRow}
+      >
+        <Text style={s.disclosureLabel}>{open ? 'Hide workout text' : 'View workout text'}</Text>
+        <Ionicons
+          name={open ? 'chevron-up' : 'chevron-down'}
+          size={14}
+          color={colors.muted}
+        />
+      </PressableScale>
+      {open ? (
+        <View style={s.rawBlock}>
+          {before ? (
+            <>
+              <Text style={s.workoutSideLabel}>Current</Text>
+              <Text style={s.workoutRaw}>{normalizeDescription(before)}</Text>
+            </>
+          ) : null}
+          {after ? (
+            <>
+              <Text style={s.workoutSideLabelAccent}>Proposed</Text>
+              <Text style={s.workoutRaw}>{normalizeDescription(after)}</Text>
+            </>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -337,8 +443,8 @@ function DeleteView({
       {e.description ? (
         <View style={s.workoutBlock}>
           <Text style={s.fieldLabel}>Workout</Text>
-          <Text style={s.workoutSummary}>{workoutSummaryLine(e.description)}</Text>
           <WorkoutTimeline description={e.description} />
+          <WorkoutTextDisclosure after={e.description} />
         </View>
       ) : null}
       <Text style={s.deleteNote}>Approving removes this session from your intervals.icu calendar.</Text>
@@ -385,6 +491,21 @@ const styles = (p: Palette) =>
       backgroundColor: p.borderStrong,
       marginBottom: -spacing.sm,
     },
+    // v3 §1.1 coach summary strip
+    coachStrip: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+    coachAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.borderGlass,
+    },
+    rationale: {
+      color: p.text,
+      fontSize: fontSize.body,
+      lineHeight: lineHeight.body,
+      flexShrink: 1,
+    },
     headRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
     kindBadge: {
       width: 36,
@@ -395,13 +516,18 @@ const styles = (p: Palette) =>
       backgroundColor: p.accent,
     },
     verb: { color: p.text, fontSize: fontSize.h, fontWeight: '700', flexShrink: 1 },
+    nameDiff: {
+      color: p.muted,
+      fontSize: fontSize.small,
+      marginTop: 1,
+      flexShrink: 1,
+    },
     idMeta: {
       color: p.muted,
       fontSize: fontSize.tiny,
       fontVariant: ['tabular-nums'],
-      marginTop: 1,
+      textAlign: 'center',
     },
-    clauses: { color: p.muted, fontSize: fontSize.tiny, marginTop: 1 },
     fields: { gap: spacing.sm },
     fieldsScroll: { flexShrink: 1 },
     chipRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -421,7 +547,7 @@ const styles = (p: Palette) =>
     diffArrow: { color: p.muted, fontSize: fontSize.body },
     diffAfter: { color: p.text, fontSize: fontSize.body, fontWeight: '600', flexShrink: 1 },
     diffNote: { color: p.muted, fontSize: fontSize.small, fontStyle: 'italic' },
-    workoutSide: { gap: spacing.xs, marginTop: spacing.xs },
+    workoutSide: { gap: spacing.xs },
     workoutSideLabel: {
       color: p.muted,
       fontSize: fontSize.tiny,
@@ -436,16 +562,24 @@ const styles = (p: Palette) =>
       textTransform: 'uppercase',
       letterSpacing: 0.5,
     },
-    workoutBlock: { gap: spacing.xs, marginTop: spacing.xs },
-    workoutSummary: { color: p.text, fontSize: fontSize.body },
+    workoutBlock: { gap: spacing.xs },
+    disclosureRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      minHeight: 36,
+      marginTop: spacing.xs,
+      alignSelf: 'flex-start',
+    },
+    disclosureLabel: { color: p.muted, fontSize: fontSize.small, fontWeight: '600' },
+    rawBlock: { gap: spacing.xs, marginTop: spacing.xs },
     workoutRaw: {
-      color: p.muted,
+      color: p.mutedStrong,
       fontSize: fontSize.small,
-      lineHeight: 18,
+      lineHeight: lineHeight.small,
       fontVariant: ['tabular-nums'],
     },
     deleteNote: { color: p.danger, fontSize: fontSize.small, marginTop: spacing.xs },
-    rationale: { color: p.muted, fontSize: fontSize.small, fontStyle: 'italic', lineHeight: 19 },
     error: { color: p.danger, fontSize: fontSize.small },
     actions: { flexDirection: 'row', gap: spacing.sm },
     hint: { color: p.muted, fontSize: fontSize.tiny, textAlign: 'center' },

@@ -404,7 +404,14 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
       continue;
     }
     try {
-      const { kind, payload, rationale } = validateProposal(tc.name, args);
+      const { kind, payload, rationale, bundle } = validateProposal(tc.name, args);
+      // v2 §3 cleanup (parity with the worker): normalize digest pipe artifacts
+      // BEFORE storing so the raw text never shows "…| |…" concatenation.
+      if (typeof payload.description === 'string') {
+        payload.description = payload.description.replace(/\s*\|\s*/g, '\n');
+      }
+      // bundle parity: the worker stores bundle_key/bundle_summary from the
+      // validated args — the direct transport must create identical rows.
       const row = await pb.collection('proposals').create({
         user: userId,
         session: sessionId,
@@ -412,6 +419,8 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
         payload,
         rationale: rationale ?? null,
         status: 'pending',
+        bundle_key: bundle?.key ?? null,
+        bundle_summary: bundle?.summary ?? null,
       });
       // a stopped turn still persists its proposal (row above) but must not
       // pop the modal — the inline card + post-turn refresh surface it
@@ -422,6 +431,9 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
           payload: payload as Proposal['payload'],
           rationale: rationale ?? null,
           status: 'pending',
+          created: new Date().toISOString(),
+          bundleKey: bundle?.key ?? null,
+          bundleSummary: bundle?.summary ?? null,
         });
       }
     } catch (e) {

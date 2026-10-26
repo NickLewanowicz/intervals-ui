@@ -266,6 +266,10 @@ export function useSessionProposals(sessionId: string | null): UseQueryResult<Pr
         payload: (r.payload ?? {}) as EventEx,
         rationale: typeof r.rationale === 'string' ? r.rationale : null,
         status: typeof r.status === 'string' ? r.status : 'pending',
+        created: typeof r.created === 'string' ? r.created : null,
+        bundleKey: typeof r.bundle_key === 'string' && r.bundle_key !== '' ? r.bundle_key : null,
+        bundleSummary:
+          typeof r.bundle_summary === 'string' && r.bundle_summary !== '' ? r.bundle_summary : null,
       }));
     },
   });

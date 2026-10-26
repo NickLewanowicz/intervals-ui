@@ -53,6 +53,8 @@ import type { Proposal, ProposalKind } from '@/lib/records';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 import ProposalModal from '@/components/ProposalModal';
+import ProposalBundleSheet from '@/components/ProposalBundleSheet';
+import { groupContaining, groupProposals, type BundleGroup } from '@/lib/proposal-bundles';
 
 const COACH_AVATAR = require('@/assets/coach-avatar.png');
 
@@ -270,6 +272,7 @@ export default function CoachScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<Proposal | null>(null);
+  const [bundle, setBundle] = useState<BundleGroup | null>(null);
   const [transport, setTransport] = useState<Transport>('server');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -469,11 +472,20 @@ export default function CoachScreen() {
         prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + t } : m)),
       );
     let turnHadProposal = false;
+    const turnProposals: Proposal[] = [];
+    let openedSingle = false;
     const onProposal = (p: Proposal) => {
       turnHadProposal = true;
-      setModal(p);
+      turnProposals.push(p);
       setLiveProposals((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, p]));
       void pending.refetch();
+      // Singles open mid-stream exactly as before. Bundled items wait for
+      // `done`: the group must be complete before the multi-select sheet
+      // opens (the first of 3 bundle events must not pop a single modal).
+      if (!p.bundleKey) {
+        openedSingle = true;
+        setModal(p);
+      }
     };
     const handleSession = (id: string) => {
       historyLoadedFor.current = id; // the live turn owns the transcript
@@ -484,6 +496,38 @@ export default function CoachScreen() {
       if (d.session_id) handleSession(d.session_id);
       if (d.proposal_errors?.length) {
         setError(`Coach proposed an invalid change: ${d.proposal_errors[0]!.error}`);
+      }
+      void openTurnBundle();
+    };
+    // v2: a turn that bundled 2+ related changes opens the grouped review
+    // sheet instead of last-one-wins single modals. Members = the turn's
+    // proposals sharing the key, unioned with anything else still pending
+    // under it; a LONE bundled change falls back to the single modal.
+    const openTurnBundle = async () => {
+      const first = turnProposals.find((p) => p.bundleKey);
+      if (!first?.bundleKey) return;
+      const key = first.bundleKey;
+      const seen = new Set<string>();
+      const candidates: Proposal[] = [];
+      let pendingRows: Proposal[] = [];
+      try {
+        const res = await pending.refetch();
+        pendingRows = res.data ?? [];
+      } catch {
+        // pending refresh failed — the turn's own members still group
+      }
+      for (const row of [...turnProposals, ...pendingRows]) {
+        if (row.bundleKey === key && !seen.has(row.id)) {
+          seen.add(row.id);
+          candidates.push(row);
+        }
+      }
+      const group = groupContaining(groupProposals(candidates), first.id);
+      if (group?.kind === 'bundle') {
+        setModal(null); // the bundle review supersedes any single modal
+        setBundle(group);
+      } else if (!openedSingle && candidates[0]) {
+        setModal(candidates[0]);
       }
     };
     const handleError = (e: string | DirectChatError) => {
@@ -566,8 +610,42 @@ export default function CoachScreen() {
     void pending.refetch();
   };
 
+  const onBundleResolved = (outcome: 'applied' | 'dismissed' | 'closed') => {
+    setBundle(null);
+    if (outcome !== 'closed') invalidateMirrors();
+    invalidateChatData();
+    void pending.refetch(); // fresh pending count + card statuses
+  };
+
   const pendingItems = pending.data ?? [];
   const pendingError = pending.isError ? (pending.error as Error)?.message : null;
+
+  // the pending bar opens whatever the athlete is most likely reacting to —
+  // the NEWEST pending item's review: its bundle sheet when that item belongs
+  // to a bundle group (2+ sharing the key), else today's single modal
+  const openPendingReview = () => {
+    const newest = pendingItems[0];
+    if (!newest) return;
+    const group = groupContaining(groupProposals(pendingItems), newest.id);
+    if (group?.kind === 'bundle') setBundle(group);
+    else setModal(newest);
+  };
+
+  // a transcript card for a bundled proposal opens the whole group (pending
+  // rows only — resolved cards keep the single modal for their status view)
+  const openProposal = (p: Proposal) => {
+    if (p.bundleKey) {
+      const members = pendingItems.filter((x) => x.bundleKey === p.bundleKey);
+      if (members.length >= 2) {
+        const group = groupContaining(groupProposals(members), p.id);
+        if (group?.kind === 'bundle') {
+          setBundle(group);
+          return;
+        }
+      }
+    }
+    setModal(p);
+  };
 
   // transcript cards: query proposals (fresh statuses) + in-flight ones, deduped
   const allProps = useMemo(() => {
@@ -627,7 +705,7 @@ export default function CoachScreen() {
         <PressableScale
           accessibilityRole="button"
           style={s.pendingBar}
-          onPress={() => setModal(pendingItems[0]!)}
+          onPress={openPendingReview}
         >
           <Icon name="file-tray-full" size={16} color={colors.accentText} />
           <Text style={s.pendingText} numberOfLines={1}>
@@ -709,7 +787,7 @@ export default function CoachScreen() {
                 {turnCards.length > 0 ? (
                   <View style={s.cardRow}>
                     {turnCards.map((p) => (
-                      <ProposalCard key={p.id} proposal={p} onPress={() => setModal(p)} />
+                      <ProposalCard key={p.id} proposal={p} onPress={() => openProposal(p)} />
                     ))}
                   </View>
                 ) : null}
@@ -720,7 +798,7 @@ export default function CoachScreen() {
         {orphanCards.length > 0 ? (
           <View style={s.cardRow}>
             {orphanCards.map((p) => (
-              <ProposalCard key={p.id} proposal={p} onPress={() => setModal(p)} />
+              <ProposalCard key={p.id} proposal={p} onPress={() => openProposal(p)} />
             ))}
           </View>
         ) : null}
@@ -785,6 +863,9 @@ export default function CoachScreen() {
       </View>
 
       {modal ? <ProposalModal proposal={modal} onResolved={onProposalResolved} /> : null}
+      {bundle ? (
+        <ProposalBundleSheet key={bundle.key} group={bundle} onResolved={onBundleResolved} />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
