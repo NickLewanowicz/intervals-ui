@@ -14,23 +14,25 @@
 import { readFileSync } from 'node:fs';
 
 const env = (() => {
+  // file .env first, then real process.env overrides (QA stack targets local PB)
   const dot = readFileSync(new URL('../.env', import.meta.url), 'utf8');
-  return Object.fromEntries(
+  const file = Object.fromEntries(
     dot
       .split('\n')
       .filter((l) => l.includes('=') && !l.trim().startsWith('#'))
       .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]),
   );
+  return { ...file, ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('PB_'))) };
 })();
 
-const PB_URL = env.PB_URL || 'https://intervals.pockethost.io';
+const PB_URL = process.env.PB_URL || env.PB_URL || 'https://intervals.pockethost.io';
 
-let token = env.PB_TOKEN || null;
+let token = process.env.PB_TOKEN || env.PB_TOKEN || null;
 if (!token) {
   const res = await fetch(`${PB_URL}/api/collections/_superusers/auth-with-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identity: env.PB_EMAIL, password: env.PB_PASSWORD }),
+    body: JSON.stringify({ identity: process.env.PB_EMAIL || env.PB_EMAIL, password: process.env.PB_PASSWORD || env.PB_PASSWORD }),
   });
   if (!res.ok) throw new Error(`superuser auth failed: ${res.status} ${await res.text()}`);
   token = (await res.json()).token;
