@@ -23,10 +23,12 @@ import { toActivity, toEvent, toWellness, type Proposal } from './records';
 import {
   WIDGET_SNAPSHOT_STALE_MS,
   WIDGET_WRITE_DEBOUNCE_MS,
+  buildWidgetSnapshot,
   readWidgetSnapshot,
   writeWidgetSnapshot,
   type WidgetSnapshotInput,
 } from './widget-data';
+import { writeIosWidgetSnapshot } from './widget-ios';
 
 export const queryKeys = {
   calendar: (from: string, to: string) => ['calendar', from, to] as const,
@@ -383,23 +385,29 @@ async function refreshPlacedWidgets(): Promise<void> {
 }
 
 /**
- * Fire-and-forget Android home-screen widget snapshot refresh (round 16).
+ * Fire-and-forget home-screen widget snapshot refresh (round 16 Android,
+ * round 17 iOS WidgetKit).
  *
  * Mount once on the calendar screen: when the widget source query succeeds,
- * a debounced write lands in AsyncStorage (see widget-data.ts) and every
- * placed widget re-renders — the UI is never blocked on it. On app foreground
- * the snapshot is checked and the source refetched only when missing or older
- * than 6h (background JS cannot run; the OS-level 30-min widget update also
- * re-renders from the last snapshot). Android-only no-op otherwise.
+ * a debounced write lands in AsyncStorage (see widget-data.ts) and placed
+ * widgets re-render — the UI is never blocked on it. Android pushes through
+ * requestWidgetUpdate; iOS additionally mirrors the JSON into the App Group
+ * via the WidgetSnapshotBridge native module (see widget-ios.ts), which calls
+ * WidgetCenter.reloadAllTimelines() on the same write. On app foreground the
+ * snapshot is checked and the source refetched only when missing or older
+ * than 6h (background JS cannot run; the OS-level widget timeline refresh
+ * also re-renders from the last snapshot). Web is a no-op.
  */
 export function useWidgetSnapshotSync(): void {
   const qc = useQueryClient();
   const android = Platform.OS === 'android';
+  const ios = Platform.OS === 'ios';
+  const nativeWidgets = android || ios;
   const signedIn = !!currentUserId();
 
   const source = useQuery({
     queryKey: queryKeys.widgetSnapshotSource,
-    enabled: android && signedIn,
+    enabled: nativeWidgets && signedIn,
     staleTime: 15 * 60_000,
     retry: false,
     queryFn: fetchWidgetSnapshotSource,
@@ -407,18 +415,22 @@ export function useWidgetSnapshotSync(): void {
 
   // debounced, non-blocking write + widget push whenever fresh mirror data lands
   useEffect(() => {
-    if (!android || !source.data) return;
+    if (!nativeWidgets || !source.data) return;
     const t = setTimeout(() => {
       writeWidgetSnapshot(source.data!)
-        .then(refreshPlacedWidgets)
+        .then(async () => {
+          // round-17: mirror the same snapshot into the iOS App Group
+          if (ios) writeIosWidgetSnapshot(buildWidgetSnapshot(source.data!));
+        })
+        .then(() => (android ? refreshPlacedWidgets() : undefined))
         .catch((e: unknown) => console.warn('[widget] snapshot refresh failed:', e));
     }, WIDGET_WRITE_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [android, source.data]);
+  }, [android, ios, nativeWidgets, source.data]);
 
   // foreground: refresh only when the snapshot went stale (>6h)
   useEffect(() => {
-    if (!android) return;
+    if (!nativeWidgets) return;
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active' || !currentUserId()) return;
       void (async () => {
@@ -428,5 +440,5 @@ export function useWidgetSnapshotSync(): void {
       })();
     });
     return () => sub.remove();
-  }, [android, qc]);
+  }, [nativeWidgets, qc]);
 }

@@ -5,7 +5,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Field } from '@/components/ui';
@@ -17,11 +17,17 @@ export default function SignInPage() {
   const { colors } = useTheme();
   const s = styles(colors);
   const insets = useSafeAreaInsets();
-  const { signIn } = useAuth();
+  const { signIn, ready, user } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // A persisted session restored by AuthProvider lands here (hydration
+  // completes after the guard redirect) — walk the athlete into the app.
+  useEffect(() => {
+    if (ready && user) router.replace('/(app)/calendar');
+  }, [ready, user]);
 
   const onSubmit = async () => {
     if (!email.trim() || !password) {

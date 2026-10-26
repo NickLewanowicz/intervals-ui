@@ -1,0 +1,6 @@
+{
+  "name": "widget-snapshot-bridge",
+  "version": "0.1.0",
+  "description": "Local Expo module: mirrors the widget snapshot JSON into the iOS App Group for the WidgetKit extension.",
+  "private": true
+}

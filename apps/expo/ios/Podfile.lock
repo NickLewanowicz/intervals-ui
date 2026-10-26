@@ -2316,6 +2316,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - WidgetSnapshotBridge (0.1.0):
+    - ExpoModulesCore
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -2423,6 +2425,7 @@ DEPENDENCIES:
   - "RNScreens (from `../../../node_modules/.pnpm/react-native-screens@4.26.2_react-native@0.86.3_@babel+core@7.29.7_@react-native+metro-_c6e8b233008617749e2a19d59dac8072/node_modules/react-native-screens`)"
   - "RNSVG (from `../../../node_modules/.pnpm/react-native-svg@15.15.4_react-native@0.86.3_@babel+core@7.29.7_@react-native+metro-con_eda4397b6ed40aee3625d9b67d8527ef/node_modules/react-native-svg`)"
   - "RNWorklets (from `../../../node_modules/.pnpm/react-native-worklets@0.13.0_@babel+core@7.29.7_@react-native+metro-config@0.88.0_@babe_03ba7f0d10704ec24f1516170d70b8e9/node_modules/react-native-worklets`)"
+  - WidgetSnapshotBridge (from `../modules/widget-snapshot-bridge/ios`)
   - "Yoga (from `../../../node_modules/.pnpm/react-native@0.86.3_@babel+core@7.29.7_@react-native+metro-config@0.88.0_@babel+core@7._6d6d5e5a914e9228fe568e7c1ddbd11b/node_modules/react-native/ReactCommon/yoga`)"
 
 EXTERNAL SOURCES:
@@ -2633,6 +2636,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native-svg@15.15.4_react-native@0.86.3_@babel+core@7.29.7_@react-native+metro-con_eda4397b6ed40aee3625d9b67d8527ef/node_modules/react-native-svg"
   RNWorklets:
     :path: "../../../node_modules/.pnpm/react-native-worklets@0.13.0_@babel+core@7.29.7_@react-native+metro-config@0.88.0_@babe_03ba7f0d10704ec24f1516170d70b8e9/node_modules/react-native-worklets"
+  WidgetSnapshotBridge:
+    :path: "../modules/widget-snapshot-bridge/ios"
   Yoga:
     :path: "../../../node_modules/.pnpm/react-native@0.86.3_@babel+core@7.29.7_@react-native+metro-config@0.88.0_@babel+core@7._6d6d5e5a914e9228fe568e7c1ddbd11b/node_modules/react-native/ReactCommon/yoga"
 
@@ -2740,6 +2745,7 @@ SPEC CHECKSUMS:
   RNScreens: c1a06fd73d0581a2a28a160577be393f579662b9
   RNSVG: 3fe8590403ac9f107b4d14591bc6e54da4894e5c
   RNWorklets: 5d6a0ded79f82b7ffbcde97abe9c74d40252a3e1
+  WidgetSnapshotBridge: 1802803752815e080a957f56222e98fe1945a6bf
   Yoga: 18b74b3ade30bebc1904004dfaceae1dd02a330a
 
 PODFILE CHECKSUM: d6373f2667465d66b75901adb02ee692d160e581

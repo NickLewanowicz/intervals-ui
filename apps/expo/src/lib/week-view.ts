@@ -312,3 +312,35 @@ export function rollupChips(r: DayRollup): RollupChip[] {
   }
   return chips;
 }
+
+// ---------------------------------------------------------------------------
+// Mobile compact models (calendar-week-mobile-spec v2.1: flat rows, <900px)
+// ---------------------------------------------------------------------------
+
+/**
+ * One-line muted rollup for the compact day header: "10.5km · 108" —
+ * distance (or time when no distance is knowable) then load, load only
+ * when > 0. Estimates keep ≈. The run count is dropped: the rows below
+ * already show it (spec §1: chips shrink to text-only).
+ */
+export function compactRollupText(r: DayRollup): string | null {
+  const parts: string[] = [];
+  if (r.distanceM > 0) {
+    parts.push(`${r.distanceEstimated ? '≈' : ''}${formatKm(r.distanceM)}`);
+  } else if (r.timeSec > 0) {
+    parts.push(`${r.timeEstimated ? '≈' : ''}${formatDuration(r.timeSec)}`);
+  }
+  if (r.load > 0) {
+    parts.push(`${Math.round(r.load)}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/**
+ * Line-2 stat cells for the compact run row: distance · time · load only
+ * (spec §2 — pace/HR stay in the detail sheet; never a labeled grid here).
+ */
+export function compactStatCells(metrics: MetricCell[]): MetricCell[] {
+  const keep = new Set(['distance', 'time', 'load']);
+  return metrics.filter((m) => keep.has(m.id));
+}

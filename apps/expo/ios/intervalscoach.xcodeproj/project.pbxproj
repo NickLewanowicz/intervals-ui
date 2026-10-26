@@ -8,28 +8,87 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		27C2CE0CC13EFAA88A70A9A5 /* SnapshotModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8669F83682C49A4A159D6618 /* SnapshotModel.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		3E8E91A017FD1E64F50A54B7 /* intervalscoachWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BD547333699A03E27160F52 /* intervalscoachWidgetBundle.swift */; };
+		49224D809382B3B2CC4A9137 /* intervalscoachWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D6C20BEA9B5C442FA4ECF2A /* intervalscoachWidgetBundle.swift */; };
+		4AE3EE55905277050D28310A /* FitnessWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DA5B2DD9A676E44244C12C /* FitnessWidget.swift */; };
+		5EC65177A414BD75ECF709E5 /* intervalscoachWidgets in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D147192277C455A7C49419F9 /* intervalscoachWidgets */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		65F26306250E6AFABD16F814 /* SnapshotModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF3565AFFEA0F4FBD3EAB9F /* SnapshotModel.swift */; };
+		6C0203F2262445331500CA96 /* SharedWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFFE250E287C6CE1270B268A /* SharedWidgetViews.swift */; };
+		7A1F2B03D514BEDAF0671A18 /* UpcomingRunsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F329A38FD24AA32F4E2966 /* UpcomingRunsWidget.swift */; };
+		83187B60FF516441B25F92CE /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0953796653D6038428BD3AF8 /* WidgetTheme.swift */; };
+		B17DC0C5B736B2A67BF8E63F /* NextRaceWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F120D6773E1E18E8125F33 /* NextRaceWidget.swift */; };
+		B6259088D47650022533AE16 /* FitnessWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBCD167FFFCEFA968FA9806 /* FitnessWidget.swift */; };
 		B6B702DAF3009B98C29A5438 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD6F46D8A110492D9E77C7D8 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		BDE03AFBCD911A23A16BA35A /* libPods-intervalscoach.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 91E249094CA87A5EDD5398D8 /* libPods-intervalscoach.a */; };
+		CB4E4D68B4A2BACA3CA176BF /* SharedWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222467C533D0971E60A0A57F /* SharedWidgetViews.swift */; };
 		CF9B2B8F3DDE2D5F57689DBA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 52C88D12A78D74C0AD9F31AB /* PrivacyInfo.xcprivacy */; };
+		D31C17D26D9F3DD1C689C53A /* UpcomingRunsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7FBB144D1E50E9D26BCCE7 /* UpcomingRunsWidget.swift */; };
+		DE7C496C4583899733391ECE /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EAB7DF09C923463D683DF008 /* Foundation.framework */; };
+		E9109146C170CCCBDBEBF49F /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8141E09EF70A2E62A1A9A6C /* WidgetTheme.swift */; };
+		F08DC2DB5398078AF8C821B6 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EAB7DF09C923463D683DF008 /* Foundation.framework */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		F48F88AF8FE7750DA9150CE2 /* NextRaceWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26662220B9D0312A984505D9 /* NextRaceWidget.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		668E15A7C9EB378D6BB65ECA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AD402583111ED08D2A0249F7;
+			remoteInfo = intervalscoachWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		025EF7C5333CCE86A5E94D5D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				5EC65177A414BD75ECF709E5 /* intervalscoachWidgets in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		08C23F0891235EA57878843B /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0953796653D6038428BD3AF8 /* WidgetTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* intervalscoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = intervalscoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = intervalscoach/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = intervalscoach/Info.plist; sourceTree = "<group>"; };
+		222467C533D0971E60A0A57F /* SharedWidgetViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedWidgetViews.swift; sourceTree = "<group>"; };
+		26662220B9D0312A984505D9 /* NextRaceWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextRaceWidget.swift; sourceTree = "<group>"; };
+		3F7FBB144D1E50E9D26BCCE7 /* UpcomingRunsWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UpcomingRunsWidget.swift; sourceTree = "<group>"; };
+		46DA5B2DD9A676E44244C12C /* FitnessWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FitnessWidget.swift; sourceTree = "<group>"; };
+		4CBCD167FFFCEFA968FA9806 /* FitnessWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FitnessWidget.swift; sourceTree = "<group>"; };
 		52C88D12A78D74C0AD9F31AB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = intervalscoach/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		5AF3565AFFEA0F4FBD3EAB9F /* SnapshotModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SnapshotModel.swift; sourceTree = "<group>"; };
+		5D6C20BEA9B5C442FA4ECF2A /* intervalscoachWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = intervalscoachWidgetBundle.swift; sourceTree = "<group>"; };
+		63F120D6773E1E18E8125F33 /* NextRaceWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextRaceWidget.swift; sourceTree = "<group>"; };
 		6BCA6602B1239406406EE1C0 /* Pods-intervalscoach.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-intervalscoach.debug.xcconfig"; path = "Target Support Files/Pods-intervalscoach/Pods-intervalscoach.debug.xcconfig"; sourceTree = "<group>"; };
+		6BD547333699A03E27160F52 /* intervalscoachWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = intervalscoachWidgetBundle.swift; sourceTree = "<group>"; };
 		824881014CD9841D53E8237E /* Pods-intervalscoach.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-intervalscoach.release.xcconfig"; path = "Target Support Files/Pods-intervalscoach/Pods-intervalscoach.release.xcconfig"; sourceTree = "<group>"; };
+		8669F83682C49A4A159D6618 /* SnapshotModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SnapshotModel.swift; sourceTree = "<group>"; };
 		91E249094CA87A5EDD5398D8 /* libPods-intervalscoach.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-intervalscoach.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A130B66B08846F99DB94ABA4 /* intervalscoachWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = intervalscoachWidgets.entitlements; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = intervalscoach/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C4F329A38FD24AA32F4E2966 /* UpcomingRunsWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UpcomingRunsWidget.swift; sourceTree = "<group>"; };
 		CD6F46D8A110492D9E77C7D8 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-intervalscoach/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		D147192277C455A7C49419F9 /* intervalscoachWidgets */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; name = intervalscoachWidgets; path = intervalscoachWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		DFFE250E287C6CE1270B268A /* SharedWidgetViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedWidgetViews.swift; sourceTree = "<group>"; };
+		EAB7DF09C923463D683DF008 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = intervalscoach/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* intervalscoach-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "intervalscoach-Bridging-Header.h"; path = "intervalscoach/intervalscoach-Bridging-Header.h"; sourceTree = "<group>"; };
+		F8141E09EF70A2E62A1A9A6C /* WidgetTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,6 +97,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				BDE03AFBCD911A23A16BA35A /* libPods-intervalscoach.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		888DE7EABA9528F3C5A88EB2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DE7C496C4583899733391ECE /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -73,6 +140,7 @@
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				91E249094CA87A5EDD5398D8 /* libPods-intervalscoach.a */,
+				ED88A0EC308E85CB3205FB6D /* iOS */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -101,6 +169,7 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				1C8DBD787791B31E4EDB977F /* Pods */,
 				309E608986D9B327F790A9F3 /* ExpoModulesProviders */,
+				F2CA60FA4DE57AF73B6F2334 /* intervalscoachWidgets */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -111,6 +180,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* intervalscoach.app */,
+				D147192277C455A7C49419F9 /* intervalscoachWidgets */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -132,6 +202,31 @@
 			name = intervalscoach;
 			sourceTree = "<group>";
 		};
+		ED88A0EC308E85CB3205FB6D /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				EAB7DF09C923463D683DF008 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		F2CA60FA4DE57AF73B6F2334 /* intervalscoachWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				4CBCD167FFFCEFA968FA9806 /* FitnessWidget.swift */,
+				26662220B9D0312A984505D9 /* NextRaceWidget.swift */,
+				DFFE250E287C6CE1270B268A /* SharedWidgetViews.swift */,
+				8669F83682C49A4A159D6618 /* SnapshotModel.swift */,
+				C4F329A38FD24AA32F4E2966 /* UpcomingRunsWidget.swift */,
+				0953796653D6038428BD3AF8 /* WidgetTheme.swift */,
+				6BD547333699A03E27160F52 /* intervalscoachWidgetBundle.swift */,
+				08C23F0891235EA57878843B /* Info.plist */,
+				A130B66B08846F99DB94ABA4 /* intervalscoachWidgets.entitlements */,
+			);
+			name = intervalscoachWidgets;
+			path = intervalscoachWidgets;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -147,15 +242,34 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				796F474AE3522706DDB93523 /* [CP] Embed Pods Frameworks */,
+				025EF7C5333CCE86A5E94D5D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				9AC4AF776A18F88EB5BD09F9 /* PBXTargetDependency */,
 			);
 			name = intervalscoach;
 			productName = intervalscoach;
 			productReference = 13B07F961A680F5B00A75B9A /* intervalscoach.app */;
 			productType = "com.apple.product-type.application";
+		};
+		AD402583111ED08D2A0249F7 /* intervalscoachWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0E17354A7D9491736683C070 /* Build configuration list for PBXNativeTarget "intervalscoachWidgets" */;
+			buildPhases = (
+				12AC1CA5DD148CA5870DDBF9 /* Sources */,
+				888DE7EABA9528F3C5A88EB2 /* Frameworks */,
+				C186E9A46FD023BB63F59C6D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = intervalscoachWidgets;
+			productName = intervalscoachWidgets;
+			productReference = D147192277C455A7C49419F9 /* intervalscoachWidgets */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -184,6 +298,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* intervalscoach */,
+				AD402583111ED08D2A0249F7 /* intervalscoachWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -197,6 +312,13 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				CF9B2B8F3DDE2D5F57689DBA /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C186E9A46FD023BB63F59C6D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -333,6 +455,20 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		12AC1CA5DD148CA5870DDBF9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B6259088D47650022533AE16 /* FitnessWidget.swift in Sources */,
+				F48F88AF8FE7750DA9150CE2 /* NextRaceWidget.swift in Sources */,
+				6C0203F2262445331500CA96 /* SharedWidgetViews.swift in Sources */,
+				27C2CE0CC13EFAA88A70A9A5 /* SnapshotModel.swift in Sources */,
+				7A1F2B03D514BEDAF0671A18 /* UpcomingRunsWidget.swift in Sources */,
+				83187B60FF516441B25F92CE /* WidgetTheme.swift in Sources */,
+				3E8E91A017FD1E64F50A54B7 /* intervalscoachWidgetBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		13B07F871A680F5B00A75B9A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -343,6 +479,15 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		9AC4AF776A18F88EB5BD09F9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = intervalscoachWidgets;
+			target = AD402583111ED08D2A0249F7 /* intervalscoachWidgets */;
+			targetProxy = 668E15A7C9EB378D6BB65ECA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
@@ -412,6 +557,63 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
+		};
+		55800B5E05D2EA72F23E492D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = intervalscoachWidgets/intervalscoachWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = intervalscoachWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.intervalscoach.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		66786787A0421D2C96405612 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = intervalscoachWidgets/intervalscoachWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = intervalscoachWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.intervalscoach.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 		83CBBA201A601CBA00E9B192 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -549,9 +751,75 @@
 			};
 			name = Release;
 		};
+		DB3A012E00FFA0F8080FC1EB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = intervalscoachWidgets/intervalscoachWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = intervalscoachWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.intervalscoach.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F1A6809BACACDEE7C748C2A3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = intervalscoachWidgets/intervalscoachWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = intervalscoachWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.intervalscoach.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0E17354A7D9491736683C070 /* Build configuration list for PBXNativeTarget "intervalscoachWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DB3A012E00FFA0F8080FC1EB /* Release */,
+				66786787A0421D2C96405612 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "intervalscoach" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

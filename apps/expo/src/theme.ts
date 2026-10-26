@@ -178,6 +178,9 @@ export const radius = {
 export const layout = {
   /** Max content width on wide web viewports. */
   maxW: 860,
+  /** Viewport at which layouts diverge: compact mobile anatomy below, the
+   *  wide desktop layout (side panel, labeled metric grids) at/above. */
+  wide: 900,
   /** Floating tab bar metrics (viet-study chassis). */
   tabBarHeight: 62,
   tabBarInset: 12,

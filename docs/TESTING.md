@@ -87,5 +87,42 @@ Gotchas (learned round iOS-1):
   blind-tap. Full flow: `tools/parity_ios.sh`; web baseline at the same
   logical size (402×874 @3x): `tools/parity_web_ios.cjs` →
   `qa-screenshots/parity/web/ios-comparison/`.
-- iOS home-screen widgets are WidgetKit (NOT react-native-android-widget) —
-  the Android widgets are Android-only until a WidgetKit target exists.
+- iOS home-screen widgets are WidgetKit (round 17): a `intervalscoachWidgets`
+  app-extension target — see "iOS home-screen widgets (round 17)" below.
+
+## iOS home-screen widgets (round 17)
+
+Three SwiftUI WidgetKit widgets (NextRace / UpcomingRuns / Fitness) mirroring
+the Android lineup. Sources live in git at `apps/expo/widgets-ios/` +
+`apps/expo/modules/widget-snapshot-bridge/` (a local Expo module the APP uses
+to write the snapshot JSON into the App Group and push timelines). The
+generated `ios/` project must be patched after every prebuild:
+
+```sh
+cd apps/expo && npx expo prebuild --platform ios --no-install
+cd ios && /opt/homebrew/opt/cocoapods/bin/pod install   # brew pod (gotcha above)
+cd ../.. && tools/ios_widgets_setup.sh                  # idempotent: adds target + App Groups + embed
+cd apps/expo/ios && xcodebuild \
+  -workspace intervalscoach.xcworkspace -scheme intervalscoach \
+  -configuration Release -sdk iphonesimulator -derivedDataPath build/ios -quiet build
+# → build/ios/Build/Products/Release-iphonesimulator/intervalscoach.app
+#   (+ intervalscoachWidgets.appex embedded in PlugIns/)
+```
+
+- `tools/ios_widgets_setup.sh` is the ONLY place iOS project surgery lives:
+  it recreates the `intervalscoachWidgets` extension target from the
+  git-tracked Swift, writes the App Group
+  (`group.com.anonymous.intervalscoach`) entitlements for both targets, and
+  wires app → extension dependency + embed. Safe to re-run any time; re-run
+  it after every `expo prebuild --platform ios` (prebuild wipes the target).
+- Data path: RN `writeWidgetSnapshot` (AsyncStorage, Android) is mirrored on
+  iOS by `WidgetSnapshotBridge.write(json)` → shared
+  `UserDefaults(suiteName:)` key `widget.snapshot.v1` → the extension reads
+  it offline. Proof of crossing: the group plist under the simulator's
+  `data/Containers/Shared/AppGroup/*/Library/Preferences/` contains the JSON.
+- Placement QA: long-press home → + → search "intervals" → add each widget;
+  captures in `qa-screenshots/round-17-ios-widgets/`. Countdown demo rows:
+  `node .scratch/r16-mirror.mjs race-add` → relaunch app → widget shows the
+  TEST race → `node .scratch/r16-mirror.mjs clean` (verify 0 remaining).
+- Device (non-simulator) builds additionally need App Group provisioning —
+  out of scope for the simulator QA chain above.
