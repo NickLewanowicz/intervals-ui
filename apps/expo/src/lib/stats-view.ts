@@ -63,6 +63,8 @@ export interface TileSub {
   text: string;
   tone: TileTone;
   dir?: TrendDir;
+  /** True for the planned/target value — rendered with a flag icon, no word. */
+  planned?: boolean;
 }
 
 export interface TileModel {
@@ -89,7 +91,7 @@ export interface SummaryStatsInput {
   plannedTimeEstimated?: boolean;
 }
 
-const plannedPrefix = (estimated?: boolean) => (estimated ? 'planned ≈' : 'planned ');
+const plannedPrefix = (estimated?: boolean) => (estimated ? '≈' : '');
 
 /** Distance / Time / Load tiles: BIG actual value, muted "planned" sub-chip. */
 export function summaryTiles(s: SummaryStatsInput): TileModel[] {
@@ -103,6 +105,7 @@ export function summaryTiles(s: SummaryStatsInput): TileModel[] {
           ? {
               text: `${plannedPrefix(s.plannedDistanceEstimated)}${formatKm(s.plannedDistanceM)}`,
               tone: 'neutral',
+              planned: true,
             }
           : null,
     },
@@ -115,6 +118,7 @@ export function summaryTiles(s: SummaryStatsInput): TileModel[] {
           ? {
               text: `${plannedPrefix(s.plannedTimeEstimated)}${formatDuration(s.plannedTimeSec)}`,
               tone: 'neutral',
+              planned: true,
             }
           : null,
     },
@@ -124,7 +128,7 @@ export function summaryTiles(s: SummaryStatsInput): TileModel[] {
       value: s.actualLoad > 0 ? String(Math.round(s.actualLoad)) : '—',
       sub:
         s.plannedLoad > 0
-          ? { text: `planned ${Math.round(s.plannedLoad)}`, tone: 'neutral' }
+          ? { text: `${Math.round(s.plannedLoad)}`, tone: 'neutral', planned: true }
           : null,
     },
   ];

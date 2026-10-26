@@ -323,7 +323,17 @@ export default function HeroCard({
           </>
         ) : null}
       </View>
-      <View style={wide ? s.tilesRow : s.tilesGrid}>
+            {/* The hero's single sentence — the most important read, kept first. */}
+      {verdict ? (
+        <Text
+          accessibilityRole="text"
+          style={[s.verdict, s.verdictStrong, trend?.detraining && { color: colors.danger }]}
+        >
+          {verdict}
+        </Text>
+      ) : null}
+
+<View style={s.tilesRow}>
         {strip.map((tile, i) => (
           <View key={tile.id} style={cellStyle(i, wide, colors.border)}>
             <StatTile
@@ -332,26 +342,18 @@ export default function HeroCard({
               valueTone={tile.valueTone}
               sub={tile.sub}
               hint={hints[tile.id] ?? undefined}
+              size={wide ? 'lg' : 'sm'}
               testID={`tile-${tile.id}`}
             />
           </View>
         ))}
         <View style={cellStyle(strip.length, wide, colors.border)}>
-          <FormCell model={formTile} />
+          <FormCell model={formTile} compact={!wide} />
         </View>
       </View>
 
       {/* The hero's single sentence (design spec §3) — everything it used to
           duplicate lives in the tiles above and the drawer below. */}
-      {verdict ? (
-        <Text
-          accessibilityRole="text"
-          style={[s.verdict, trend?.detraining && { color: colors.danger }]}
-        >
-          {verdict}
-        </Text>
-      ) : null}
-
       {/* SECONDARY — the "what it means" drawer */}
       {hasDetails ? (
         <View style={s.detailsWrap}>
@@ -477,7 +479,7 @@ function cellStyle(i: number, wide: boolean, borderColor: string): ViewStyle {
 }
 
 /** The FORM tile: mini ring + big signed value + band-word chip. */
-function FormCell({ model }: { model: FormTileModel }) {
+function FormCell({ model, compact = false }: { model: FormTileModel; compact?: boolean }) {
   const { colors } = useTheme();
   const s = styles(colors);
   const toneColor: Record<TileTone, string> = {
@@ -498,14 +500,14 @@ function FormCell({ model }: { model: FormTileModel }) {
         {model.hint ? <InfoHint content={model.hint} label="About form" /> : null}
       </View>
       <View style={s.formValueRow}>
-        <FormRing
-          fraction={model.ring.fraction}
-          color={toneColor[model.ring.tone]}
-          track={colors.border}
-          size={30}
-          strokeWidth={3}
-        />
-        <Text style={[s.formValue, { color: valueColor }]} numberOfLines={1}>
+        <Text
+          style={[
+            s.formValue,
+            compact && { fontSize: 16 },
+            { color: valueColor },
+          ]}
+          numberOfLines={1}
+        >
           {model.value}
         </Text>
       </View>
@@ -672,6 +674,13 @@ const styles = (p: Palette) =>
       lineHeight: lineHeight.small + 2,
       fontWeight: '600',
       fontVariant: ['tabular-nums'],
+    },
+    // promoted above the tiles — the primary read of the card
+    verdictStrong: {
+      color: p.text,
+      fontSize: fontSize.body,
+      lineHeight: lineHeight.body,
+      fontWeight: '700',
     },
     // --- details drawer ---
     detailsWrap: {

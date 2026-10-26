@@ -111,11 +111,11 @@ describe('summaryTiles (design spec §2: big actual, muted planned sub-chip)', (
     const dist = tiles[0]!;
     expect(dist.label).toBe('Distance');
     expect(dist.value).toBe('30.4km');
-    expect(dist.sub).toEqual({ text: 'planned ≈48.2km', tone: 'neutral' });
+    expect(dist.sub).toEqual({ text: '≈48.2km', tone: 'neutral', planned: true });
     expect(tiles[1]!.value).toBe('4h00m');
-    expect(tiles[1]!.sub!.text).toBe('planned 6h30m');
+    expect(tiles[1]!.sub!.text).toBe('6h30m');
     expect(tiles[2]!.value).toBe('137');
-    expect(tiles[2]!.sub).toEqual({ text: 'planned 266', tone: 'neutral' });
+    expect(tiles[2]!.sub).toEqual({ text: '266', tone: 'neutral', planned: true });
   });
 
   it('zero actual reads as an em dash and zero planned drops the sub-chip', () => {

@@ -269,6 +269,8 @@ export interface StatTileSub {
   tone: TileTone;
   /** Directional icon: up / down / remove (flat). No icon when omitted. */
   dir?: 'up' | 'down' | 'flat';
+  /** Planned/target value — rendered with a flag icon instead of a word. */
+  planned?: boolean;
 }
 
 const SUB_ICON: Record<NonNullable<StatTileSub['dir']>, IconName> = {
@@ -317,6 +319,13 @@ export function StatTile({
       </Text>
       {sub ? (
         <View style={s.tileSubRow}>
+          {sub.planned ? (
+            <Ionicons
+              name="flag"
+              size={size === 'sm' ? 9 : 10}
+              color={toneColor}
+            />
+          ) : null}
           {sub.dir ? (
             <Ionicons
               name={SUB_ICON[sub.dir]}
