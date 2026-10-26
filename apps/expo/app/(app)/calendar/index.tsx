@@ -61,7 +61,7 @@ import {
   weekWindow,
 } from '@/lib/dates';
 import { relativeTime } from '@/lib/format';
-import { useCalendarWindow, useInvalidateMirrors, useSyncState, useThresholdPace, useWellness } from '@/lib/queries';
+import { useCalendarWindow, useInvalidateMirrors, useSyncState, useThresholdPace, useWellness, useWidgetSnapshotSync } from '@/lib/queries';
 import { fontSize, layout, pageSpacing, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 
@@ -97,6 +97,8 @@ export default function CalendarScreen() {
   const syncState = useSyncState();
   const thresholdPace = useThresholdPace();
   const invalidateMirrors = useInvalidateMirrors();
+  // round-16: feed the Android home-screen widgets (fire-and-forget snapshot)
+  useWidgetSnapshotSync();
 
   // round-8 FIX-3: first load shows the skeleton ON this screen — never a
   // blank body. isLoading alone misses seeding/refetch (isFetching).

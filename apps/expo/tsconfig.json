@@ -13,6 +13,8 @@
     }
   },
   "include": [
+    "index.ts",
+    "widgets.tsx",
     "app/**/*.ts",
     "app/**/*.tsx",
     "src/**/*.ts",

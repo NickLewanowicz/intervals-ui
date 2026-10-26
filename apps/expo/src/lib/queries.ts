@@ -3,6 +3,8 @@
  * the signed-in user's id; the SDK URL-encodes the filter string.
  */
 import { useQuery, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { AppState, Platform } from 'react-native';
 import type { Activity, EventEx, SportSettings, WellnessDay } from '@intervals/core';
 import { listProposals, type SyncResult } from './api';
 import {
@@ -15,8 +17,16 @@ import {
   syncStateFilter,
   wellnessFilter,
 } from './filters';
+import { addDays, todayISO } from './dates';
 import { currentUserId, pb } from './pb';
 import { toActivity, toEvent, toWellness, type Proposal } from './records';
+import {
+  WIDGET_SNAPSHOT_STALE_MS,
+  WIDGET_WRITE_DEBOUNCE_MS,
+  readWidgetSnapshot,
+  writeWidgetSnapshot,
+  type WidgetSnapshotInput,
+} from './widget-data';
 
 export const queryKeys = {
   calendar: (from: string, to: string) => ['calendar', from, to] as const,
@@ -28,6 +38,7 @@ export const queryKeys = {
   pendingProposals: ['pending-proposals'] as const,
   mirroredEvent: (intervalsId: number) => ['mirrored-event', intervalsId] as const,
   thresholdPace: ['threshold-pace'] as const,
+  widgetSnapshotSource: ['widget-snapshot-source'] as const,
 };
 
 export interface CalendarWindow {
@@ -314,6 +325,108 @@ export function useInvalidateMirrors() {
     void qc.invalidateQueries({ queryKey: ['calendar'] });
     void qc.invalidateQueries({ queryKey: ['wellness'] });
     void qc.invalidateQueries({ queryKey: queryKeys.syncState });
+    // round-16: a manual sync should reach the home-screen widgets too
+    void qc.invalidateQueries({ queryKey: queryKeys.widgetSnapshotSource });
     if (result) void qc.refetchQueries({ queryKey: ['calendar'] });
   };
+}
+
+// ---------- widget snapshot sync (round 16) ----------
+
+/**
+ * The widget snapshot source: the SAME mirror reads the calendar uses, over a
+ * window wide enough for both widgets — events/activities today → +90d (the
+ * sync window, so far-future races reach the countdown) and 14 wellness days.
+ */
+async function fetchWidgetSnapshotSource(): Promise<WidgetSnapshotInput> {
+  const user = currentUserId();
+  if (!user) throw new Error('not signed in');
+  const today = todayISO();
+  const filter = calendarWindowFilter(user, today, addDays(today, 90));
+  const [ev, ac, wl] = await Promise.all([
+    pb.collection('calendar_events').getList(1, 300, { filter, sort: 'start_date_local' }),
+    pb.collection('activities').getList(1, 300, { filter, sort: 'start_date_local' }),
+    pb.collection('wellness').getList(1, 14, { filter: wellnessFilter(user), sort: '-date' }),
+  ]);
+  return {
+    events: ev.items.map(toEvent),
+    activities: ac.items.map(toActivity),
+    wellness: wl.items.map(toWellness),
+  };
+}
+
+/**
+ * Push the freshly-written snapshot onto every PLACED widget. A snapshot
+ * write alone never reaches the launcher — the lib's requestWidgetUpdate
+ * re-renders each registered widget from the new snapshot (no-op per widget
+ * when it isn't on a home screen).
+ */
+async function refreshPlacedWidgets(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  // require keeps the native-only graph out of the web evaluation path (index.ts)
+  const { requestWidgetUpdate } =
+    require('react-native-android-widget') as typeof import('react-native-android-widget');
+  const widgets = require('../../widgets') as typeof import('../../widgets');
+  const snapshot = await readWidgetSnapshot();
+  await Promise.all(
+    widgets.WIDGET_NAMES.map((name) =>
+      requestWidgetUpdate({
+        widgetName: name,
+        renderWidget: (info) => {
+          const element = widgets.renderWidgetByName(name, info.width, info.height, snapshot);
+          // WIDGET_NAMES only contains registered components, so element is set
+          return Promise.resolve(element!) as Promise<import('react-native-android-widget').WidgetRepresentation>;
+        },
+      }).catch(() => undefined), // not placed / launcher refused — fine
+    ),
+  );
+}
+
+/**
+ * Fire-and-forget Android home-screen widget snapshot refresh (round 16).
+ *
+ * Mount once on the calendar screen: when the widget source query succeeds,
+ * a debounced write lands in AsyncStorage (see widget-data.ts) and every
+ * placed widget re-renders — the UI is never blocked on it. On app foreground
+ * the snapshot is checked and the source refetched only when missing or older
+ * than 6h (background JS cannot run; the OS-level 30-min widget update also
+ * re-renders from the last snapshot). Android-only no-op otherwise.
+ */
+export function useWidgetSnapshotSync(): void {
+  const qc = useQueryClient();
+  const android = Platform.OS === 'android';
+  const signedIn = !!currentUserId();
+
+  const source = useQuery({
+    queryKey: queryKeys.widgetSnapshotSource,
+    enabled: android && signedIn,
+    staleTime: 15 * 60_000,
+    retry: false,
+    queryFn: fetchWidgetSnapshotSource,
+  });
+
+  // debounced, non-blocking write + widget push whenever fresh mirror data lands
+  useEffect(() => {
+    if (!android || !source.data) return;
+    const t = setTimeout(() => {
+      writeWidgetSnapshot(source.data!)
+        .then(refreshPlacedWidgets)
+        .catch((e: unknown) => console.warn('[widget] snapshot refresh failed:', e));
+    }, WIDGET_WRITE_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [android, source.data]);
+
+  // foreground: refresh only when the snapshot went stale (>6h)
+  useEffect(() => {
+    if (!android) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || !currentUserId()) return;
+      void (async () => {
+        const snap = await readWidgetSnapshot();
+        const fresh = snap != null && Date.now() - snap.writtenAt < WIDGET_SNAPSHOT_STALE_MS;
+        if (!fresh) qc.invalidateQueries({ queryKey: queryKeys.widgetSnapshotSource });
+      })();
+    });
+    return () => sub.remove();
+  }, [android, qc]);
 }

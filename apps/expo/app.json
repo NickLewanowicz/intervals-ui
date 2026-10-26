@@ -26,7 +26,80 @@
       "expo-router",
       "expo-status-bar",
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "NextRace",
+              "label": "Next Race",
+              "description": "Countdown to your next race",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "NextRaceWide",
+              "label": "Next Race (wide)",
+              "description": "Race countdown in one row",
+              "minWidth": "250dp",
+              "minHeight": "40dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "UpcomingRuns",
+              "label": "Upcoming Runs",
+              "description": "Your next days of planned and recorded runs",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "UpcomingRunsTall",
+              "label": "Upcoming Runs (tall)",
+              "description": "More days of planned and recorded runs",
+              "minWidth": "250dp",
+              "minHeight": "180dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 3,
+              "resizeMode": "vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "Fitness",
+              "label": "Fitness",
+              "description": "CTL, ATL, form and a 14-day fitness sparkline",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "FitnessWide",
+              "label": "Fitness (wide)",
+              "description": "CTL, ATL, form and a 14-day fitness sparkline",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false
