@@ -40,3 +40,52 @@ against the deployed app (vision-capable sessions only).
 - Build: `cd apps/expo && npx expo prebuild --platform android --no-install && cd android && JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home ANDROID_HOME=~/Library/Android/sdk ./gradlew assembleRelease` → `app/build/outputs/apk/release/app-release.apk` (signed with the machine's debug keystore — keep using the same machine for update installs).
 - Install: `adb install -r <apk>` on a running emulator/device.
 - Parity captures: `tools/parity_shots.sh all` (emu via uiautomator + web via playwright) → `qa-screenshots/parity/{emu,web}/`, then the qa-parity persona compares (docs/qa/parity-round-N.md). Parity sign-off round 1: docs/qa/parity-round-1.md.
+
+## Native (iOS) build + parity QA
+
+Proven chain on this machine (Xcode 26.3 / iOS 26.3 sim runtime, RN 0.8x + Expo SDK 54-ish with pods):
+
+```sh
+# 1) native project (ios/ dir is committed; re-run only after native deps change)
+cd apps/expo && npx expo prebuild --platform ios --no-install
+
+# 2) pods — MUST be the Homebrew pod; /usr/local/bin/pod is a stale x86 1.11.3
+#    install that dies on "Ignoring ffi-1.15.5 because its extensions are not
+#    built". Brew pod 1.17.0 works (homebrew ruby 4.0; no bundler needed).
+/opt/homebrew/opt/cocoapods/bin/pod install          # run inside apps/expo/ios
+
+# 3) release simulator build (JS bundle baked; PB + worker endpoints compiled in)
+cd apps/expo/ios && xcodebuild \
+  -workspace intervalscoach.xcworkspace -scheme intervalscoach \
+  -configuration Release -sdk iphonesimulator -derivedDataPath build/ios -quiet build
+#   → build/ios/Build/Products/Release-iphonesimulator/intervalscoach.app
+
+# 4) install + launch (device: intervals-iphone, UDID in tools/parity_ios.sh)
+xcrun simctl boot 3AE59F28-6801-4426-9054-F57B20299899
+xcrun simctl ui 3AE59F28-6801-4426-9054-F57B20299899 appearance dark  # app is dark-first
+xcrun simctl install 3AE59F28-6801-4426-9054-F57B20299899 apps/expo/ios/build/ios/Build/Products/Release-iphonesimulator/intervalscoach.app
+xcrun simctl launch 3AE59F28-6801-4426-9054-F57B20299899 com.anonymous.intervalscoach
+```
+
+Gotchas (learned round iOS-1):
+
+- **pod**: use `/opt/homebrew/opt/cocoapods/bin/pod` (see above). The stale
+  `/usr/local/bin/pod` (1.11.3, broken ffi gem) will fail mid-install.
+- **ruby/jdk**: the iOS leg needs no JAVA_HOME (that's the Android gradle
+  build); pods run on homebrew ruby 4.0. If gems complain, `gem pristine ffi`
+  under the homebrew ruby, or just use the brew pod path above.
+- **simctl wedges**: if `simctl install` / `listapps` / `openurl` hang forever
+  while `simctl io screenshot` and `simctl spawn` still work, the host→guest
+  MIG path is wedged (stale `CoreSimulatorService` / `SimLaunchHost` /
+  root-owned `simdiskimaged`). A Mac restart clears it; killing
+  `com.apple.CoreSimulator.CoreSimulatorService` + `SimLaunchHost` may not be
+  enough (verified 2026-10-26). Symptom check: `sample` the hung `simctl` —
+  stuck in `host_support_mig_install_app → mach_msg`.
+- **UI automation**: `idb ui *` needs `idb_companion --udid <udid>` running +
+  `idb connect localhost <grpc_port>` (port is in the companion log). Same
+  rule as Android: locate elements via `idb ui describe --json` frames, never
+  blind-tap. Full flow: `tools/parity_ios.sh`; web baseline at the same
+  logical size (402×874 @3x): `tools/parity_web_ios.cjs` →
+  `qa-screenshots/parity/web/ios-comparison/`.
+- iOS home-screen widgets are WidgetKit (NOT react-native-android-widget) —
+  the Android widgets are Android-only until a WidgetKit target exists.

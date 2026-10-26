@@ -13,7 +13,8 @@
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#111111",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.intervalscoach"
     },
     "android": {
       "package": "com.anonymous.intervalscoach"
