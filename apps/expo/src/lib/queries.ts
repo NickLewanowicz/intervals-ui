@@ -57,39 +57,56 @@ const inWindow = (dateLocal: string, from: string, to: string) => {
 /**
  * The tightest already-cached calendar window that fully contains [from, to]
  * (e.g. the calendar screen's week window seeding a pushed day screen), sliced
- * to the requested range. Undefined when nothing covers it — the query then
- * loads as usual.
+ * to the requested range, plus the moment that cache was actually fetched.
+ * Undefined when nothing covers it — the query then loads as usual.
  */
-function cachedContainingWindow(qc: QueryClient, from: string, to: string): CalendarWindow | undefined {
+function cachedContainingWindow(
+  qc: QueryClient,
+  from: string,
+  to: string,
+): { data: CalendarWindow; updatedAt: number } | undefined {
   const entries = qc.getQueriesData<CalendarWindow>({ queryKey: ['calendar'] });
-  let best: { from: string; to: string; data: CalendarWindow } | undefined;
+  let best: { from: string; to: string; data: CalendarWindow; updatedAt: number } | undefined;
   for (const [key, data] of entries) {
     if (!data) continue;
     const f = key[1];
     const t = key[2];
     if (typeof f !== 'string' || typeof t !== 'string') continue;
     if (f > from || t < to) continue; // must fully contain the requested window
-    if (!best || (f >= best.from && t <= best.to)) best = { from: f, to: t, data };
+    if (!best || (f >= best.from && t <= best.to)) {
+      best = {
+        from: f,
+        to: t,
+        data,
+        updatedAt: qc.getQueryState(key)?.dataUpdatedAt ?? 0,
+      };
+    }
   }
   if (!best) return undefined;
   return {
-    events: best.data.events.filter((e) => inWindow(e.start_date_local, from, to)),
-    activities: best.data.activities.filter((a) => inWindow(a.start_date_local, from, to)),
+    updatedAt: best.updatedAt,
+    data: {
+      events: best.data.events.filter((e) => inWindow(e.start_date_local, from, to)),
+      activities: best.data.activities.filter((a) => inWindow(a.start_date_local, from, to)),
+    },
   };
 }
 
 /**
  * Events + activities whose start_date_local falls in [from, to] (ISO dates).
  * Seeds from any cached containing window via initialData so a day pushed from
- * the calendar renders INSTANTLY with known info and only refines in the
- * background — no spinner when the data is already on hand.
+ * the calendar renders INSTANTLY with known info — and, because the seed
+ * carries the cache's true fetch time (initialDataUpdatedAt), a stale seed is
+ * treated as stale: the query resolves FROM THE MIRROR in the background
+ * instead of trusting the slice for staleTime (QA A3 cold deep-link fix).
  */
 export function useCalendarWindow(from: string, to: string): UseQueryResult<CalendarWindow> {
   const qc = useQueryClient();
   return useQuery({
     queryKey: queryKeys.calendar(from, to),
     enabled: !!currentUserId(),
-    initialData: () => cachedContainingWindow(qc, from, to),
+    initialData: () => cachedContainingWindow(qc, from, to)?.data,
+    initialDataUpdatedAt: () => cachedContainingWindow(qc, from, to)?.updatedAt,
     queryFn: async (): Promise<CalendarWindow> => {
       const user = currentUserId();
       if (!user) return { events: [], activities: [] };

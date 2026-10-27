@@ -33,6 +33,7 @@ import WorkoutTimeline from '@/components/WorkoutTimeline';
 import { PressableScale } from '@/components/motion';
 import { applyProposal, dismissProposal } from '@/lib/api';
 import { useMirroredEvent } from '@/lib/queries';
+import { isProposable } from '@/lib/proposal-hydration';
 import { diffEvent, proposalTitle, type DiffRow } from '@/lib/proposal-diff';
 import { diffBarRow, type DiffBarRowModel } from '@/lib/diff-bar-view';
 import { normalizeDescription, planTimeline } from '@/lib/workout-view';
@@ -66,6 +67,13 @@ export default function ProposalModal({
   const kind = KIND_ICON[proposal.kind];
   const p = proposal.payload;
   const isRace = (p.category ?? '').startsWith('RACE');
+
+  // BUG #17 (parity-2): the modal NEVER renders enabled actions from a stub —
+  // an empty id POSTs `/api/proposals//apply` (404) and an empty payload is
+  // the hollow "Add to calendar" shell. A stub with an id renders a "syncing
+  // details" state (the coach screen hydrates it from the pending row); an
+  // id-less one is a dead end and says so honestly. Closing always works.
+  const actionable = isProposable(proposal);
 
   // FIX-1a/c: the mirror's current state — the "before" of the diff, and the
   // human name for a delete. Load failure or miss never blocks approval.
@@ -103,6 +111,7 @@ export default function ProposalModal({
   const title = proposalTitle(proposal.kind, titleName);
 
   const act = async (action: 'apply' | 'dismiss') => {
+    if (!actionable) return; // stub state — buttons are disabled anyway
     setBusy(action);
     setError(null);
     try {
@@ -189,6 +198,16 @@ export default function ProposalModal({
           </ScrollView>
 
           {error ? <Text style={s.error}>{error}</Text> : null}
+          {!actionable ? (
+            proposal.id ? (
+              <Text style={s.syncNote}>Syncing proposal details…</Text>
+            ) : (
+              <Text style={s.error}>
+                This change didn’t save properly, so it can’t be approved here — check pending
+                proposals or ask the coach to propose it again.
+              </Text>
+            )
+          ) : null}
 
           <View style={s.actions}>
             <Button
@@ -196,7 +215,7 @@ export default function ProposalModal({
               icon="checkmark"
               onPress={() => void act('apply')}
               loading={busy === 'apply'}
-              disabled={busy !== null}
+              disabled={busy !== null || !actionable}
               style={{ flex: 1 }}
             />
             <Button
@@ -205,7 +224,7 @@ export default function ProposalModal({
               icon="close"
               onPress={() => void act('dismiss')}
               loading={busy === 'dismiss'}
-              disabled={busy !== null}
+              disabled={busy !== null || !actionable}
               style={{ flex: 1 }}
             />
           </View>
@@ -581,6 +600,7 @@ const styles = (p: Palette) =>
     },
     deleteNote: { color: p.danger, fontSize: fontSize.small, marginTop: spacing.xs },
     error: { color: p.danger, fontSize: fontSize.small },
+    syncNote: { color: p.muted, fontSize: fontSize.small, fontStyle: 'italic' },
     actions: { flexDirection: 'row', gap: spacing.sm },
     hint: { color: p.muted, fontSize: fontSize.tiny, textAlign: 'center' },
   });

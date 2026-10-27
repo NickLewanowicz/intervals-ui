@@ -17,12 +17,15 @@ import {
   isRaceEvent,
   loadToFormZero,
   loadToHoldFlat,
+  pairDayEvents,
   project,
+  reconcileDay,
   requiredDailyLoad,
   weeklyStats,
   weekKey,
   wellnessSummary,
   zoneBalance,
+  type DayCell,
 } from '../src/stats';
 import type { Activity, EventEx, WellnessDay } from '../src/types';
 
@@ -431,5 +434,166 @@ describe('formatters', () => {
   it('formats pace', () => {
     expect(formatPace(3.7037)).toBe('3:42/km');
     expect(formatPace(4)).toBe('4:00/km');
+  });
+});
+
+describe('same-day reconciliation (QA A2: done days double-count)', () => {
+  const TODAY = '2026-10-26';
+
+  it('merges the Noor case: unpaired 24.1km activity + planned event same day → ONE reconciled entry', () => {
+    const cell: DayCell = {
+      date: '2026-10-24',
+      events: [
+        ev({
+          id: 7,
+          name: 'Sunday long run',
+          start_date_local: '2026-10-24T08:00:00',
+          distance: 24_000,
+          moving_time: 10_800,
+          icu_training_load: 120,
+        }),
+      ],
+      activities: [
+        act({
+          id: 'i9',
+          name: 'Morning Run',
+          start_date_local: '2026-10-24T07:42:17',
+          distance: 24_100,
+          moving_time: 10_920,
+          icu_training_load: 116,
+          // paired_event_id missing entirely — the ghost-MISSED trigger
+        }),
+      ],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0]!.actual?.id).toBe('i9');
+    expect(r.lone).toHaveLength(0);
+    // the reconciled entry is DONE (past day), never MISSED
+    expect(r.events[0]!.event.start_date_local.slice(0, 10) < TODAY).toBe(true);
+    // day total counts the session once — actual only, load not summed twice
+    expect(r.events[0]!.actual!.distance).toBe(24_100);
+    expect(r.events[0]!.actual!.icu_training_load).toBe(116);
+  });
+
+  it('keeps the weekly hero and the reconciled day in agreement', () => {
+    const e = ev({ id: 7, start_date_local: '2026-10-24T08:00:00', distance: 24_000, icu_training_load: 120 });
+    const a = act({
+      id: 'i9',
+      start_date_local: '2026-10-24T07:42:17',
+      distance: 24_100,
+      icu_training_load: 116,
+    });
+    const hero = weeklyStats([e], [a], '2026-10-19');
+    const day = reconcileDay({ date: '2026-10-24', events: [e], activities: [a] });
+    // one actual session in both views — the hero counts the activity once and
+    // the reconciled day carries that same activity (never planned+actual)
+    expect(hero.actualDistanceM).toBe(24_100);
+    expect(hero.runs).toBe(1);
+    expect(day.events[0]!.actual!.distance).toBe(hero.actualDistanceM);
+    expect(day.lone).toHaveLength(0);
+  });
+
+  it('explicit paired_event_id still wins and renders DONE', () => {
+    const cell: DayCell = {
+      date: '2026-10-20',
+      events: [ev({ id: 7, start_date_local: '2026-10-20T17:45:00' })],
+      activities: [act({ id: 'i1', start_date_local: '2026-10-20T17:47:53', paired_event_id: 7, distance: 8823 })],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events[0]!.actual?.id).toBe('i1');
+    expect(r.lone).toHaveLength(0);
+  });
+
+  it('a genuinely missed event stays unmerged (no same-day activity)', () => {
+    const cell: DayCell = {
+      date: '2026-10-22',
+      events: [ev({ id: 3, start_date_local: '2026-10-22T06:00:00', moving_time: 2400 })],
+      activities: [],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0]!.actual).toBeNull();
+    expect(r.lone).toHaveLength(0);
+  });
+
+  it('an activity with NO same-day event stays its own (unplanned) row', () => {
+    const cell: DayCell = {
+      date: '2026-10-19',
+      events: [],
+      activities: [act({ id: 'i2', start_date_local: '2026-10-19T18:17:50', distance: 3977 })],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events).toHaveLength(0);
+    expect(r.lone.map((a) => a.id)).toEqual(['i2']);
+  });
+
+  it('a same-day event already explicitly paired does not steal a second activity', () => {
+    // Oct 20 mirror shape: paired run-club session + a separate warm-up jog
+    const cell: DayCell = {
+      date: '2026-10-20',
+      events: [ev({ id: 9, start_date_local: '2026-10-20T17:45:00', distance: 8118, icu_training_load: 50 })],
+      activities: [
+        act({ id: 'warmup', start_date_local: '2026-10-20T17:34:07', distance: 1704, paired_event_id: null }),
+        act({ id: 'main', start_date_local: '2026-10-20T17:47:53', distance: 8823, paired_event_id: 9 }),
+      ],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events[0]!.actual?.id).toBe('main');
+    expect(r.lone.map((a) => a.id)).toEqual(['warmup']);
+  });
+
+  it('nearest start disambiguates two same-family events', () => {
+    const cell: DayCell = {
+      date: '2026-10-24',
+      events: [
+        ev({ id: 1, start_date_local: '2026-10-24T06:00:00', name: 'Morning easy' }),
+        ev({ id: 2, start_date_local: '2026-10-24T17:45:00', name: 'Run club' }),
+      ],
+      activities: [act({ id: 'i1', start_date_local: '2026-10-24T17:47:53', distance: 5000 })],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events.find((x) => x.event.id === 2)!.actual?.id).toBe('i1');
+    expect(r.events.find((x) => x.event.id === 1)!.actual).toBeNull();
+  });
+
+  it('never merges across sport families (Ride plan vs Run activity)', () => {
+    const cell: DayCell = {
+      date: '2026-10-24',
+      events: [ev({ id: 1, start_date_local: '2026-10-24T08:00:00', type: 'Ride' })],
+      activities: [act({ id: 'i1', start_date_local: '2026-10-24T08:10:00', type: 'Run', distance: 5000 })],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events[0]!.actual).toBeNull();
+    expect(r.lone.map((a) => a.id)).toEqual(['i1']);
+  });
+
+  it('run-family variants count as compatible (plan Run, watch TrailRun)', () => {
+    const cell: DayCell = {
+      date: '2026-10-24',
+      events: [ev({ id: 1, start_date_local: '2026-10-24T08:00:00', type: 'Run' })],
+      activities: [act({ id: 'i1', start_date_local: '2026-10-24T08:30:00', type: 'TrailRun', distance: 5000 })],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events[0]!.actual?.id).toBe('i1');
+  });
+
+  it('NOTE events never absorb activities', () => {
+    const cell: DayCell = {
+      date: '2026-10-24',
+      events: [ev({ id: 1, start_date_local: '2026-10-24T08:00:00', category: 'NOTE' })],
+      activities: [act({ id: 'i1', start_date_local: '2026-10-24T08:30:00', distance: 5000 })],
+    };
+    const r = reconcileDay(cell);
+    expect(r.events[0]!.actual).toBeNull();
+    expect(r.lone.map((a) => a.id)).toEqual(['i1']);
+  });
+
+  it('pairDayEvents works on the digests\u2019 partial mirror rows', () => {
+    const pairs = pairDayEvents(
+      [{ id: 9, start_date_local: '2026-10-20T17:45:00', category: 'WORKOUT' }],
+      [{ paired_event_id: null, start_date_local: '2026-10-20T17:47:53' }],
+    );
+    expect(pairs.size).toBe(1);
   });
 });

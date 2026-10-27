@@ -18,6 +18,7 @@ import {
   formBand,
   FORM_BAND_WORD,
   loadToHoldFlat,
+  pairDayEvents,
   project,
   weekKey,
   ctlFlatWeeklyLoad,
@@ -534,19 +535,34 @@ export function weekHonesty(
       weekKey(e.start_date_local.slice(0, 10)) === monday &&
       TRAINING_CATEGORIES.has(e.category ?? 'WORKOUT'),
   );
-  const pairedEventIds = new Set(weekActs.map((a) => a.paired_event_id).filter((x): x is number => x != null));
+  // Same-day reconciliation (QA A2): an unpaired activity that completed its
+  // planned event is neither an "extra" nor leaves the event "missed" — one
+  // honest bucket per session. Explicit paired_event_id links still win.
+  const byDate = new Map<string, { events: EventEx[]; acts: Activity[] }>();
+  const bucket = (d: string) => {
+    let b = byDate.get(d);
+    if (!b) {
+      b = { events: [], acts: [] };
+      byDate.set(d, b);
+    }
+    return b;
+  };
+  for (const e of weekEvents) bucket(e.start_date_local.slice(0, 10)).events.push(e);
+  for (const a of weekActs) bucket(a.start_date_local.slice(0, 10)).acts.push(a);
   const out: WeekHonesty = { extraCount: 0, extraLoad: 0, missedCount: 0, missedLoad: 0 };
-  for (const a of weekActs) {
-    if (a.paired_event_id == null || !weekEvents.some((e) => e.id === a.paired_event_id)) {
+  for (const { events: dayEvents, acts: dayActs } of byDate.values()) {
+    const completed = pairDayEvents(dayEvents, dayActs); // activity → event
+    const doneEvents = new Set(completed.values());
+    for (const a of dayActs) {
+      if (completed.has(a)) continue;
       out.extraCount += 1;
       out.extraLoad += a.icu_training_load ?? 0;
     }
-  }
-  for (const e of weekEvents) {
-    const done = e.id != null && pairedEventIds.has(e.id);
-    if (!done && e.start_date_local.slice(0, 10) < today) {
-      out.missedCount += 1;
-      out.missedLoad += e.icu_training_load ?? 0;
+    for (const e of dayEvents) {
+      if (!doneEvents.has(e) && e.start_date_local.slice(0, 10) < today) {
+        out.missedCount += 1;
+        out.missedLoad += e.icu_training_load ?? 0;
+      }
     }
   }
   return out;

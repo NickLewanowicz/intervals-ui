@@ -72,6 +72,15 @@ export function weekWindow(monday: string): { from: string; to: string } {
   return { from: monday, to: addDays(monday, 6) };
 }
 
+/**
+ * ±`pad`-day fetch window around a /calendar/day date (QA A3): cold deep
+ * links resolve from the mirror over a window that tolerates boundary noise
+ * instead of trusting a cached single-date slice.
+ */
+export function dayQueryWindow(date: string, pad = 3): { from: string; to: string } {
+  return { from: addDays(date, -pad), to: addDays(date, pad) };
+}
+
 /** Monday-indexed weekday (Mon=0) of an ISO date. */
 export function weekdayIndex(iso: string): number {
   const { y, m, d } = parseISO(iso);

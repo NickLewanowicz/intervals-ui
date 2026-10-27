@@ -26,7 +26,7 @@ export interface DayCell {
   date: string;
   events: EventEx[];
   activities: Activity[];
-  /** activity.id → paired event id map is implicit in the objects themselves */
+  /** Render via reconcileDay(): explicit paired_event_id links first, then the same-day fallback (QA A2). */
 }
 
 /** Group events + activities by athlete-local calendar date. */
@@ -46,6 +46,110 @@ export function buildDayCells(
   for (const e of events) cell(eventDate(e)).events.push(e);
   for (const a of activities) cell(activityDate(a)).activities.push(a);
   return cells;
+}
+
+// ---------------------------------------------------------------------------
+// Same-day reconciliation (QA A2 "done days double-count"): a recorded
+// activity whose paired_event_id is missing can still be THE run that
+// completed a planned event on the same athlete-local day (watch imports and
+// intervals.icu edits drop the link). Without the fallback the event renders
+// as ghost MISSED next to the DONE row and day rollups sum planned + actual
+// meters for one session. Explicit paired_event_id links always win; the
+// fallback never merges across days and never guesses when two same-family
+// events could claim the same run.
+// ---------------------------------------------------------------------------
+
+/** Structural event shape for pairDayEvents — full EventEx and the digests' partial mirror rows both satisfy it. */
+export interface PairableEvent {
+  id?: number;
+  type?: string;
+  category?: string;
+  start_date_local?: string;
+}
+
+/** Structural activity shape for pairDayEvents (keyed by object reference, so `id` is not required). */
+export interface PairableActivity {
+  type?: string;
+  paired_event_id?: number | null;
+  start_date_local?: string;
+}
+
+/** Events that may absorb a recorded activity — planned work and races only (notes/holidays never). */
+function trainableEvent(e: PairableEvent): boolean {
+  return e.category == null || e.category === 'WORKOUT' || String(e.category).startsWith('RACE');
+}
+
+/** Same sport family: identical types, two unknowns, or both run-family (plans say Run, watches say TrailRun/Treadmill). */
+export function sportFamilyCompatible(eventType: string | undefined, activityType: string | undefined): boolean {
+  if (!eventType || !activityType) return true; // unknown halves don't block a same-day merge
+  if (eventType === activityType) return true;
+  return RUN_SPORTS.has(eventType) && RUN_SPORTS.has(activityType);
+}
+
+/** Minutes-of-day from "YYYY-MM-DDTHH:MM:SS" (0 when absent) — nearest-start tiebreak within a day. */
+function startMinutes(startLocal: string | undefined): number {
+  const h = Number(startLocal?.slice(11, 13));
+  const m = Number(startLocal?.slice(14, 16));
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+/**
+ * Pair ONE day's activities to its events: explicit paired_event_id links
+ * first, then each unpaired activity completes the day's one unclaimed
+ * trainable event of the same sport family (nearest start disambiguates when
+ * several candidates remain). Returns activity → event. Generic so the coach
+ * digest (mirror partials) and the UI (full rows) share one heuristic.
+ */
+export function pairDayEvents<E extends PairableEvent, A extends PairableActivity>(
+  events: readonly E[],
+  activities: readonly A[],
+): Map<A, E> {
+  const byActivity = new Map<A, E>();
+  const taken = new Set<E>();
+  for (const a of activities) {
+    if (a.paired_event_id == null) continue;
+    const e = events.find((x) => !taken.has(x) && x.id === a.paired_event_id);
+    if (e) {
+      byActivity.set(a, e);
+      taken.add(e);
+    }
+  }
+  for (const a of activities) {
+    if (byActivity.has(a)) continue;
+    const candidates = events.filter(
+      (e) => !taken.has(e) && trainableEvent(e) && sportFamilyCompatible(e.type, a.type),
+    );
+    if (candidates.length === 0) continue;
+    let best = candidates[0]!;
+    if (candidates.length > 1) {
+      const gap = (e: E) => Math.abs(startMinutes(e.start_date_local) - startMinutes(a.start_date_local));
+      for (const c of candidates) if (gap(c) < gap(best)) best = c;
+    }
+    byActivity.set(a, best);
+    taken.add(best);
+  }
+  return byActivity;
+}
+
+export interface ReconciledDay {
+  /** The day's events, each with the activity that completed it (explicit pair or same-day fallback). */
+  events: Array<{ event: EventEx; actual: Activity | null }>;
+  /** Recorded activities merged into no event — genuinely unplanned sessions. */
+  lone: Activity[];
+}
+
+/**
+ * DayCell → reconciled view: a planned event plus an unpaired same-day
+ * activity become ONE entry (actual on the event), so a past event never
+ * shows MISSED next to a same-day DONE and day totals count the session once.
+ */
+export function reconcileDay(cell: DayCell): ReconciledDay {
+  const byActivity = pairDayEvents(cell.events, cell.activities);
+  const events = cell.events.map((event) => ({
+    event,
+    actual: cell.activities.find((a) => byActivity.get(a) === event) ?? null,
+  }));
+  return { events, lone: cell.activities.filter((a) => !byActivity.has(a)) };
 }
 
 /** Monday-start week key (YYYY-MM-DD of the week's Monday). */

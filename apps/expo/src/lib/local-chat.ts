@@ -423,10 +423,16 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
         bundle_summary: bundle?.summary ?? null,
       });
       // a stopped turn still persists its proposal (row above) but must not
-      // pop the modal — the inline card + post-turn refresh surface it
-      if (!aborted) {
+      // pop the modal — the inline card + post-turn refresh surface it.
+      // BUG #17: the row is the source of truth for the id — an id-less
+      // proposal event would open a modal whose Approve POSTs
+      // `/api/proposals//apply` (404). If the row id is missing, skip the
+      // event entirely; the post-turn refresh surfaces the row (or its
+      // absence) instead of a dead-end modal.
+      const rowId = String(row.id ?? '');
+      if (!aborted && rowId) {
         opts.onProposal({
-          id: String(row.id),
+          id: rowId,
           kind: kind as ProposalKind,
           payload: payload as Proposal['payload'],
           rationale: rationale ?? null,

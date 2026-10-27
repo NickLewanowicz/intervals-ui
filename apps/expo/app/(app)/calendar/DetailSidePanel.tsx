@@ -31,6 +31,7 @@ export default function DetailSidePanel({
   date,
   cellFor,
   today,
+  paceMinPerKm,
   progress,
   onClose,
 }: {
@@ -39,6 +40,8 @@ export default function DetailSidePanel({
   /** Day-cell lookup over the loaded window (kept current by the parent). */
   cellFor: (date: string) => DayCell;
   today: string;
+  /** Athlete pace (min/km) — planned targets keep their ≈ estimates (QA A3). */
+  paceMinPerKm?: number | null;
   /** 0 (closed) → 1 (open), owned by the calendar screen. */
   progress: Animated.Value;
   onClose: () => void;
@@ -94,7 +97,7 @@ export default function DetailSidePanel({
             />
           </View>
           <SlideFadeIn key={shown} dep={shown} direction={0} style={s.body}>
-            <DayDetails cell={cellFor(shown)} today={today} />
+            <DayDetails cell={cellFor(shown)} today={today} paceMinPerKm={paceMinPerKm} />
           </SlideFadeIn>
         </GlassSurface>
       ) : null}

@@ -49,6 +49,7 @@ import {
   useSessionProposals,
 } from '@/lib/queries';
 import { proposalTitle } from '@/lib/proposal-diff';
+import { isProposable, mergeProposalEvent } from '@/lib/proposal-hydration';
 import type { Proposal, ProposalKind } from '@/lib/records';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
@@ -482,6 +483,9 @@ export default function CoachScreen() {
       // Singles open mid-stream exactly as before. Bundled items wait for
       // `done`: the group must be complete before the multi-select sheet
       // opens (the first of 3 bundle events must not pop a single modal).
+      // Sparse singles (id without payload — BUG #17) open too: the modal
+      // gates its buttons on isProposable and the hydration effect above
+      // fills the payload from the pending row the refetch below brings in.
       if (!p.bundleKey) {
         openedSingle = true;
         setModal(p);
@@ -662,6 +666,20 @@ export default function CoachScreen() {
     const attached = new Set(Object.values(cards).flat());
     return allProps.filter((p) => !attached.has(p.id));
   }, [messages, cards, allProps]);
+
+  // BUG #17 (parity-2): a sparse modal — the SSE `proposal` event arrived with
+  // an id but no/partial payload (the frame raced the row) — upgrades itself
+  // the moment a fuller record for that id lands in the pending list or the
+  // session proposals (both refresh right after each turn). Until then the
+  // modal renders its "syncing details" state with Approve/Dismiss disabled;
+  // complete and id-less (honest-failure) modals are never touched.
+  useEffect(() => {
+    if (!modal || !modal.id || isProposable(modal)) return;
+    const fuller = [...(pending.data ?? []), ...allProps].find((x) => x.id === modal.id);
+    if (!fuller) return;
+    const merged = mergeProposalEvent(modal, fuller);
+    if (isProposable(merged)) setModal(merged);
+  }, [modal, pending.data, allProps]);
 
   const lastMsg = messages[messages.length - 1];
   const showChips =

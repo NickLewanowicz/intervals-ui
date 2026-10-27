@@ -6,7 +6,7 @@
  * chat path so both transports build identical prompts from the same
  * mirror rows.
  */
-import { formatDuration, formatKm, formatPace, isRaceEvent, weekKey } from './stats';
+import { formatDuration, formatKm, formatPace, isRaceEvent, pairDayEvents, weekKey } from './stats';
 import { formatPaceBand, trainingPaces, vdotFromPerformance } from './vdot';
 import type { Activity, EventEx, SportSettings, WellnessDay } from './types';
 
@@ -74,6 +74,12 @@ export function calendarDigest(
   const dayBlocks = dates.map((date) => {
     const { events, activities } = byDate.get(date)!;
     const week = weekKey(date);
+    // Same-day reconciliation (QA A2): explicit paired_event_id links first,
+    // then an unpaired activity completes the day's unclaimed trainable event
+    // — so a completed session reads as ONE line ("planned X · done Y") and
+    // never re-appears as a separate "(unplanned)" entry.
+    const completedBy = pairDayEvents(events, activities);
+    const actualOf = (e: MirrorEvent) => activities.find((a) => completedBy.get(a) === e);
     for (const e of events) {
       let d = num(e.distance);
       const t = num(e.moving_time);
@@ -97,9 +103,7 @@ export function calendarDigest(
       ]
         .filter(Boolean)
         .join('/');
-      const done = activities.find(
-        (a) => a.paired_event_id != null && a.paired_event_id === e.id,
-      ) ?? activities.find((a) => localDate(a.start_date_local) === localDate(e.start_date_local));
+      const done = actualOf(e);
       const doneStr = done
         ? ` · done ${done.distance ? formatKm(done.distance) : '?'}${done.moving_time ? '/' + formatDuration(done.moving_time) : ''}${done.icu_training_load ? ' load ' + Math.round(done.icu_training_load) : ''}`
         : '';
@@ -109,10 +113,7 @@ export function calendarDigest(
       if (e.description) lines.push(`    ${e.description.replace(/\n/g, ' | ').slice(0, 220)}`);
     }
     for (const a of activities) {
-      const paired = events.some(
-        (e) => (e.intervals_id ?? e.id) === a.paired_event_id,
-      );
-      if (paired) continue;
+      if (completedBy.has(a)) continue; // merged into its event's line above
       lines.push(
         `  (unplanned) ${a.name ?? a.type ?? 'Activity'} · done ${a.distance ? formatKm(a.distance) : '?'}${a.moving_time ? '/' + formatDuration(a.moving_time) : ''}${a.icu_training_load ? ' load ' + Math.round(a.icu_training_load) : ''}${a.race ? ' [RACE]' : ''}`,
       );

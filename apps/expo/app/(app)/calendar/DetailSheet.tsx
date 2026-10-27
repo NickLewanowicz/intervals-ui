@@ -39,11 +39,14 @@ export default function DetailSheet({
   date,
   cellFor,
   today,
+  paceMinPerKm,
   onClose,
 }: {
   date: string;
   cellFor: (d: string) => DayCell;
   today: string;
+  /** Athlete pace (min/km) — planned targets keep their ≈ estimates (QA A3). */
+  paceMinPerKm?: number | null;
   onClose: () => void;
 }) {
   const { colors } = useTheme();
@@ -154,7 +157,7 @@ export default function DetailSheet({
           >
             <SlideFadeIn key={date} dep={date} direction={0}>
               {/* dense: tighter expanded state on mobile (owner round 18) */}
-              <DayDetails cell={cellFor(date)} today={today} dense />
+              <DayDetails cell={cellFor(date)} today={today} dense paceMinPerKm={paceMinPerKm} />
             </SlideFadeIn>
           </ScrollView>
         </Animated.View>

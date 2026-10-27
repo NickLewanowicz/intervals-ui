@@ -59,6 +59,49 @@ describe('calendarDigest', () => {
     expect(digest).toContain('[RACE]');
   });
 
+  it('reconciles an unpaired same-day activity into its event (QA A2, Noor case)', () => {
+    const digest = calendarDigest(
+      [
+        {
+          intervals_id: 146000001,
+          start_date_local: '2026-10-24T08:00:00',
+          name: 'Aerobic maintenance',
+          category: 'WORKOUT',
+          // plans often declare time only
+          distance: 0,
+          moving_time: 3000,
+          icu_training_load: 49,
+        },
+      ],
+      [
+        {
+          id: 'i1',
+          start_date_local: '2026-10-24T07:42:17',
+          // no paired_event_id — the ghost-MISSED trigger
+          distance: 8431,
+          moving_time: 2869,
+          icu_training_load: 70,
+        },
+      ],
+    );
+    // ONE reconciled line: planned targets + done actuals together...
+    expect(digest).toContain('#146000001 Aerobic maintenance · WORKOUT · planned 50m load 49 · done 8.4km/47m load 70');
+    // ...and the same session never re-listed as a separate unplanned entry
+    expect(digest).not.toContain('(unplanned)');
+    // week totals carry the session once per column — planned load 49, actual
+    // 8.4km/load 70 (planned distance pace-estimated from the sole activity)
+    expect(digest).toContain('planned ≈8.8km/50m/load 49');
+    expect(digest).toContain('actual 8.4km/47m/load 70');
+  });
+
+  it('keeps an activity with no same-day event as its own unplanned entry', () => {
+    const digest = calendarDigest(
+      [],
+      [{ id: 'i2', start_date_local: '2026-10-19T18:17:50', distance: 3977, moving_time: 1168 }],
+    );
+    expect(digest).toContain('(unplanned)');
+  });
+
   it('handles the empty mirror', () => {
     expect(calendarDigest([], [])).toContain('calendar empty');
   });

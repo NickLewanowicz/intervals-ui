@@ -5,6 +5,7 @@ import {
   addMonths,
   clampToMonth,
   dayLabel,
+  dayQueryWindow,
   daysInMonth,
   isValidISO,
   monthAnchor,
@@ -53,6 +54,14 @@ describe('date math', () => {
 
   it('weekWindow is inclusive Mon..Sun', () => {
     expect(weekWindow('2026-10-19')).toEqual({ from: '2026-10-19', to: '2026-10-25' });
+  });
+
+  it('dayQueryWindow pads ±3 days (QA A3 day-route fetch window)', () => {
+    expect(dayQueryWindow('2026-10-24')).toEqual({ from: '2026-10-21', to: '2026-10-27' });
+    // month boundary: the window stays a valid ISO range on both sides
+    expect(dayQueryWindow('2026-10-01')).toEqual({ from: '2026-09-28', to: '2026-10-04' });
+    // a custom pad is honoured
+    expect(dayQueryWindow('2026-10-24', 0)).toEqual({ from: '2026-10-24', to: '2026-10-24' });
   });
 
   it('todayISO yields a valid local date', () => {

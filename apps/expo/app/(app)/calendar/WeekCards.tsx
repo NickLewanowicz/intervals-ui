@@ -125,7 +125,9 @@ function StatusChip({ status, category }: { status: RunStatus; category?: string
     case 'done':
       return <Badge label="DONE" tone="success" icon="checkmark" />;
     case 'missed':
-      return <Badge label="MISSED" tone="danger" />;
+      // QA A2 acceptance: past-and-never-done reads "NOT DONE" — and
+      // reconciliation guarantees it never sits beside a same-day DONE row.
+      return <Badge label="NOT DONE" tone="danger" />;
     default:
       return <Badge label="PLANNED" tone="accent" />;
   }

@@ -458,6 +458,7 @@ export default function CalendarScreen() {
           date={detailDate}
           cellFor={cellFor}
           today={today}
+          paceMinPerKm={pace}
           progress={panelProgress}
           onClose={() => setDetailDate(null)}
         />
@@ -496,6 +497,7 @@ export default function CalendarScreen() {
                     date={detailDate}
                     cellFor={cellFor}
                     today={today}
+                    paceMinPerKm={pace}
                     progress={panelProgress}
                     onClose={() => setDetailDate(null)}
                   />
@@ -537,7 +539,13 @@ export default function CalendarScreen() {
       )}
       {/* mobile + native: the same detail as a bottom sheet (spec §3) */}
       {!wide && detailDate ? (
-        <DetailSheet date={detailDate} cellFor={cellFor} today={today} onClose={() => setDetailDate(null)} />
+        <DetailSheet
+          date={detailDate}
+          cellFor={cellFor}
+          today={today}
+          paceMinPerKm={pace}
+          onClose={() => setDetailDate(null)}
+        />
       ) : null}
     </View>
   );

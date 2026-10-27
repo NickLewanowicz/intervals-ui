@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Activity, DayCell, EventEx } from '@intervals/core';
+import { buildDayCells, weeklyStats, type Activity, type DayCell, type EventEx } from '@intervals/core';
 import {
   compactRollupText,
   compactStatCells,
@@ -13,6 +13,8 @@ import {
   runStatus,
   typeTagOf,
 } from '../week-view';
+import { dayQueryWindow } from '../dates';
+import { calendarWindowFilter } from '../filters';
 
 const ev = (over: Partial<EventEx> = {}): EventEx => ({
   start_date_local: '2026-10-20T06:15:00',
@@ -281,5 +283,131 @@ describe('dayPills', () => {
     expect(pills[1]).toMatchObject({ letter: 'T', recorded: false, planned: true });
     expect(pills[2]).toMatchObject({ letter: 'W', race: true });
     expect(pills[3]).toMatchObject({ letter: 'T', isToday: true, recorded: false, planned: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Same-day reconciliation (QA A2 + A3): unpaired activities complete their
+// planned event instead of rendering ghost MISSED + double-counted totals.
+// ---------------------------------------------------------------------------
+
+describe('same-day reconciliation (QA A2)', () => {
+  const NOOR_TODAY = '2026-10-26';
+
+  const noorCell = (): DayCell => ({
+    date: '2026-10-24',
+    events: [
+      ev({
+        id: 7,
+        name: 'Sunday long run',
+        start_date_local: '2026-10-24T08:00:00',
+        distance: 24_000,
+        moving_time: 10_800,
+        icu_training_load: 120,
+      }),
+    ],
+    activities: [
+      act({
+        id: 'i9',
+        name: 'Morning Run',
+        start_date_local: '2026-10-24T07:42:17',
+        distance: 24_100,
+        moving_time: 10_920,
+        icu_training_load: 116,
+      }),
+    ],
+  });
+
+  it('renders ONE DONE row (never ghost MISSED + lone DONE) for the Noor case', () => {
+    const models = dayRunModels(noorCell(), { today: NOOR_TODAY });
+    expect(models).toHaveLength(1);
+    expect(models[0]!.status).toBe('done');
+    expect(models[0]!.metrics.find((c) => c.id === 'distance')!.value).toBe('24.1km');
+  });
+
+  it('counts the session once in the day rollup (1 run · 24.1km · load 116, not 48.1km)', () => {
+    const r = dayRollup(noorCell());
+    expect(r.count).toBe(1);
+    expect(r.distanceM).toBe(24_100);
+    expect(r.load).toBe(116);
+    expect(rollupChips(r).map((c) => c.text)).toEqual(['1 run', '24.1km', 'load 116']);
+    expect(compactRollupText(r)).toBe('24.1km · 116');
+  });
+
+  it('day rollup actuals agree with the weekly hero (weeklyStats)', () => {
+    const cell = noorCell();
+    const hero = weeklyStats(cell.events, cell.activities, '2026-10-19');
+    const r = dayRollup(cell);
+    expect(r.distanceM).toBe(hero.actualDistanceM);
+    expect(r.load).toBe(hero.actualLoad);
+    expect(r.count).toBe(hero.runs);
+  });
+
+  it('regression seed: paired event, unpaired same-day activity, and genuinely-missed event render differently', () => {
+    const cell: DayCell = {
+      date: '2026-10-20',
+      events: [
+        ev({ id: 1, name: 'Paired session', start_date_local: '2026-10-20T06:00:00' }),
+        ev({ id: 2, name: 'Unpaired plan', start_date_local: '2026-10-20T17:45:00', icu_training_load: 50 }),
+        ev({ id: 3, name: 'Truly skipped', start_date_local: '2026-10-20T12:00:00', icu_training_load: 20 }),
+      ],
+      activities: [
+        act({ id: 'a1', name: 'Morning run', start_date_local: '2026-10-20T06:10:00', paired_event_id: 1, distance: 8000 }),
+        act({ id: 'a2', name: 'Evening run', start_date_local: '2026-10-20T17:47:00', distance: 6000, icu_training_load: 61 }),
+      ],
+    };
+    const models = dayRunModels(cell, { today: NOOR_TODAY });
+    expect(models).toHaveLength(3);
+    const byTitle = new Map(models.map((m) => [m.title, m]));
+    // explicitly paired → DONE with its actual
+    expect(byTitle.get('Morning run')!.status).toBe('done');
+    // unpaired same-day → reconciled onto its plan → DONE (actual metrics)
+    expect(byTitle.get('Evening run')!.status).toBe('done');
+    expect(byTitle.get('Evening run')!.metrics.find((c) => c.id === 'distance')!.value).toBe('6.0km');
+    // no same-day activity → stays NOT DONE (was MISSED)
+    expect(byTitle.get('Truly skipped')!.status).toBe('missed');
+    // rollup: three sessions counted once each, actuals only for the done two
+    const r = dayRollup(cell);
+    expect(r.count).toBe(3);
+    expect(r.distanceM).toBe(14_000);
+    expect(r.load).toBe(61 + 20);
+  });
+
+  it('keeps a separate same-day warm-up unmerged when the event is explicitly paired', () => {
+    const cell: DayCell = {
+      date: '2026-10-20',
+      events: [ev({ id: 9, start_date_local: '2026-10-20T17:45:00', distance: 8118, icu_training_load: 50 })],
+      activities: [
+        act({ id: 'warmup', name: 'Afternoon Run', start_date_local: '2026-10-20T17:34:07', distance: 1704, icu_training_load: 16 }),
+        act({ id: 'main', name: 'Run club', start_date_local: '2026-10-20T17:47:53', distance: 8823, paired_event_id: 9, icu_training_load: 92 }),
+      ],
+    };
+    const models = dayRunModels(cell, { today: NOOR_TODAY });
+    expect(models).toHaveLength(2);
+    const r = dayRollup(cell);
+    // two real sessions — actuals only (2.7 + 9.2 total km), planned 8.1 never summed in
+    expect(r.count).toBe(2);
+    expect(r.distanceM).toBeCloseTo(10_527, 0);
+    expect(r.load).toBe(16 + 92);
+  });
+
+  it('day route window (QA A3): ±3-day window resolves the target day cell from a cold load', () => {
+    const date = '2026-10-24';
+    const win = dayQueryWindow(date);
+    expect(win).toEqual({ from: '2026-10-21', to: '2026-10-27' });
+    // mirror rows over the fetched window, grouped exactly like the route does
+    const cells = buildDayCells(
+      [ev({ id: 7, name: 'Sunday long run', start_date_local: '2026-10-24T08:00:00' })],
+      [act({ id: 'i9', start_date_local: '2026-10-24T07:42:17', distance: 24_100 })],
+    );
+    const cell = cells.get(date);
+    expect(cell).toBeDefined();
+    expect(dayRunModels(cell!, { today: NOOR_TODAY })).toHaveLength(1);
+    // single-day filter includes the day's own timestamps (string-compare bounds)
+    const f = calendarWindowFilter('u1', date, date);
+    const lo = f.match(/>= "([^"]+)"/)![1]!;
+    const hi = f.match(/<= "([^"]+)"/)![1]!;
+    expect('2026-10-24T07:42:17' >= lo && '2026-10-24T07:42:17' <= hi).toBe(true);
+    expect('2026-10-25T07:42:17' >= lo && '2026-10-25T07:42:17' <= hi).toBe(false);
   });
 });

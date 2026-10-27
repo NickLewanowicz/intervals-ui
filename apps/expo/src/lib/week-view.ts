@@ -14,6 +14,7 @@ import {
   formatKm,
   formatPace,
   isRaceEvent,
+  reconcileDay,
   type Activity,
   type DayCell,
   type EventEx,
@@ -210,16 +211,14 @@ export function runCardModel(
   };
 }
 
-/** Run-card models for a whole day: merged events first, then lone activities. */
+/** Run-card models for a whole day: reconciled events first, then lone activities. */
 export function dayRunModels(
   c: DayCell,
   opts: { today: string; paceMinPerKm?: number | null },
 ): RunCardModel[] {
-  const lone = c.activities.filter(
-    (a) => !c.events.some((e) => e.id != null && e.id === a.paired_event_id),
-  );
+  const { events, lone } = reconcileDay(c);
   return [
-    ...c.events.map((e) => runCardModel(e, c.activities.find((a) => a.paired_event_id === e.id) ?? null, opts)),
+    ...events.map(({ event, actual }) => runCardModel(event, actual, opts)),
     ...lone.map((a) => runCardModel(null, a, opts)),
   ];
 }
@@ -259,8 +258,11 @@ export function dayRollup(
     distanceEstimated: false,
     timeEstimated: false,
   };
-  for (const e of c.events) {
-    const actual = c.activities.find((a) => a.paired_event_id === e.id);
+  // Reconciled view (QA A2): a same-day unpaired activity completes its
+  // planned event, so the session contributes ONCE — actuals when recorded,
+  // planned targets when not. Never planned+actual summed together.
+  const { events, lone } = reconcileDay(c);
+  for (const { event: e, actual } of events) {
     out.count += 1;
     if (actual) {
       out.distanceM += actual.distance ?? 0;
@@ -279,8 +281,7 @@ export function dayRollup(
       out.load += e.icu_training_load ?? 0;
     }
   }
-  for (const a of c.activities) {
-    if (c.events.some((e) => e.id != null && e.id === a.paired_event_id)) continue;
+  for (const a of lone) {
     out.count += 1;
     out.distanceM += a.distance ?? 0;
     out.timeSec += a.moving_time ?? 0;

@@ -6,12 +6,22 @@
  *
  * The bubble renders in a transparent Modal measured against the anchor with
  * measureInWindow, so it escapes card overflow clipping. Dismissal (spec:
- * scroll / out-press): outside press on the overlay, Escape, scroll intents
- * (wheel/touchmove), or — web — moving the pointer clearly off both the
- * trigger and the bubble. The pointer check runs at the window level because
- * the overlay covers the trigger the instant it opens (a naive hover-out on
- * the trigger would close-flicker the bubble). No DOM-only APIs: the same
- * code path runs native (long-press to open, tap-away to close).
+ * scroll / out-press): outside press on the overlay, ANY key while open
+ * (parity-2 BUG #20 / WCAG 2.1.2 — Escape always works, Tab always moves on;
+ * the trigger's Enter/Space activation is handled by its own toggle), scroll
+ * intents (wheel/touchmove), or — web — moving the pointer clearly off both
+ * the trigger and the bubble, or focus leaving the trigger.
+ *
+ * Keyboard safety (BUG #20): the bubble NEVER contains focusable content and
+ * its wrappers are tabIndex=-1, so RNW's Modal focus trap has nothing to yank
+ * focus into — focus stays on the trigger (WAI-ARIA tooltip pattern) and
+ * returns there on close. The ModalFocusTrap's refocus-on-unmount re-fires
+ * the trigger's onFocus, which would re-open what the user just dismissed —
+ * the reopen guard (lib/hint-view.ts) suppresses that within a short
+ * cooldown. The pointer check runs at the window level because the overlay
+ * covers the trigger the instant it opens (a naive hover-out on the trigger
+ * would close-flicker the bubble). No DOM-only APIs: the same code path runs
+ * native (long-press to open, tap-away to close).
  */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,6 +37,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { GlassSurface } from '@/components/glass';
+import {
+  armReopenGuard,
+  reopenAllowed,
+  shouldDismissOnKey,
+} from '@/lib/hint-view';
 import { fontSize, lineHeight, radius, shadows, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
 
@@ -90,9 +105,11 @@ export function Hint({
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const [bubbleH, setBubbleH] = useState<number | null>(null);
   const anchorRef = useRef<View | null>(null);
+  const reopenGuardUntil = useRef(0);
   const isWeb = Platform.OS === 'web';
 
   const hide = useCallback(() => {
+    reopenGuardUntil.current = armReopenGuard(Date.now());
     setOpen(false);
     releaseDismiss(hide);
   }, []);
@@ -104,6 +121,12 @@ export function Hint({
       setOpen(true);
     });
   }, [hide]);
+  // focus-open consults the reopen guard: the Modal's refocus-on-unmount
+  // re-fires onFocus right after a dismissal and must not re-open (BUG #20).
+  const showOnFocus = useCallback(() => {
+    if (!reopenAllowed(reopenGuardUntil.current, Date.now())) return;
+    show();
+  }, [show]);
 
   const bubbleW = Math.min(BUBBLE_MAX_W, winW - SCREEN_MARGIN * 2);
   const above = anchor ? anchor.y > PREFER_ABOVE : true;
@@ -116,15 +139,20 @@ export function Hint({
       : winH - anchor.y - anchor.h - ANCHOR_GAP - SCREEN_MARGIN
     : 300;
 
-  // Escape / scroll-intent / pointer-out dismissal on web. The pointer-out
-  // check is window-level: the overlay covers the trigger once open, so a
-  // hover-out on the trigger itself would fire immediately and flicker.
+  // Any-key dismissal while open (all platforms — the optional global call
+  // no-ops where no window exists; native also has the Modal's
+  // onRequestClose for the back gesture). Scroll-intent / pointer-out checks
+  // are web-only: the overlay covers the trigger once open, so a hover-out
+  // on the trigger itself would fire immediately and flicker.
   useEffect(() => {
-    if (!open || !isWeb) return;
+    if (!open) return;
     const target = globalThis as WindowTarget;
     const onKey = (e?: { key?: string }) => {
-      if (e?.key === 'Escape') hide();
+      if (shouldDismissOnKey(e?.key)) hide();
     };
+    target.addEventListener?.('keydown', onKey);
+    if (!isWeb) return () => target.removeEventListener?.('keydown', onKey);
+
     const onScrollIntent = () => hide();
     const onMove = (e?: { clientX?: number; clientY?: number }) => {
       if (!anchor) return;
@@ -138,7 +166,6 @@ export function Hint({
       const inBubble = inBox(left, above ? anchor.y - ANCHOR_GAP - estH : anchor.y + anchor.h + ANCHOR_GAP, bubbleW, estH);
       if (!inAnchor && !inBubble) hide();
     };
-    target.addEventListener?.('keydown', onKey);
     target.addEventListener?.('wheel', onScrollIntent);
     target.addEventListener?.('touchmove', onScrollIntent);
     target.addEventListener?.('mousemove', onMove);
@@ -165,7 +192,8 @@ export function Hint({
         onLongPress={isWeb ? undefined : show}
         delayLongPress={250}
         onHoverIn={isWeb ? show : undefined}
-        onFocus={isWeb ? show : undefined}
+        onFocus={isWeb ? showOnFocus : undefined}
+        onBlur={isWeb ? hide : undefined}
       >
         {children}
       </Pressable>
@@ -173,7 +201,17 @@ export function Hint({
           eagerly, so the anchor math must not run before measureInWindow */}
       {open && anchor ? (
         <Modal transparent animationType="fade" onRequestClose={hide} statusBarTranslucent>
-          <Pressable accessibilityLabel="Dismiss explanation" onPress={hide} style={s.dismissLayer}>
+          {/* tabIndex=-1 on both wrappers (BUG #20): RNW's Modal wraps content
+              in a focus trap — any focusable node in here lets it yank focus
+              off the trigger and strand it inside the bubble. With none, the
+              trap can't move focus and the bubble reads as role=tooltip. The
+              content must stay non-interactive (text only). */}
+          <Pressable
+            accessibilityLabel="Dismiss explanation"
+            onPress={hide}
+            style={s.dismissLayer}
+            tabIndex={-1}
+          >
             {/* the wrapper IS positioned (shrink-wraps the bubble) and captures
                 presses on the bubble so they don't dismiss the overlay */}
             <Pressable
@@ -187,10 +225,13 @@ export function Hint({
                     : { top: anchor.y + anchor.h + ANCHOR_GAP }),
                 },
               ]}
+              tabIndex={-1}
             >
               <View
                 onLayout={(e) => setBubbleH(e.nativeEvent.layout.height)}
                 style={{ width: '100%' }}
+                role="tooltip"
+                accessibilityLiveRegion="polite"
               >
                 <GlassSurface style={[s.bubble, { maxHeight }]}>
                   {typeof content === 'string' ? (

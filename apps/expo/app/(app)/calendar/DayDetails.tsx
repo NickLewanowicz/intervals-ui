@@ -8,7 +8,7 @@
  * Data arrives via the caller's DayCell (no fetching here): the calendar
  * screen already holds the week window; the day route loads [date, date].
  */
-import { formatDuration } from '@intervals/core';
+import { formatDuration, reconcileDay } from '@intervals/core';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Badge } from '@/components/ui';
@@ -17,6 +17,7 @@ import MetricGrid from './MetricGrid';
 import { timeLabel } from '@/lib/dates';
 import {
   dominantZone,
+  plannedMetricCells,
   recordedMetricCells,
   runStatus,
   type RunStatus,
@@ -33,7 +34,9 @@ function StatusBadge({ status, category }: { status: RunStatus; category?: strin
     case 'done':
       return <Badge label="DONE" tone="success" icon="checkmark" />;
     case 'missed':
-      return <Badge label="MISSED" tone="danger" />;
+      // QA A2 acceptance: the past-and-never-done state reads "NOT DONE" —
+      // reconciliation guarantees it never sits next to a same-day DONE row.
+      return <Badge label="NOT DONE" tone="danger" />;
     default:
       return <Badge label="PLANNED" tone="accent" />;
   }
@@ -87,6 +90,7 @@ export default function DayDetails({
   cell,
   today,
   dense,
+  paceMinPerKm,
 }: {
   cell: DayCell;
   today: string;
@@ -97,15 +101,17 @@ export default function DayDetails({
    * already renders the same text. Other surfaces keep the round-13 look.
    */
   dense?: boolean;
+  /** Athlete pace (min/km) so planned targets keep their ≈ estimates (QA A3 parity with the run rows). */
+  paceMinPerKm?: number | null;
 }) {
   const { colors } = useTheme();
   const s = styles(colors);
-  const { events, activities } = cell;
-  const loneActivities = activities.filter(
-    (a) => !events.some((e) => e.id != null && e.id === a.paired_event_id),
-  );
+  // Reconciled view (QA A2): an unpaired same-day activity merges onto its
+  // planned event (one DONE entry, planned targets kept as the "Planned"
+  // block) — a past event never renders NOT DONE next to a same-day DONE.
+  const { events, lone } = useMemo(() => reconcileDay(cell), [cell]);
 
-  if (events.length === 0 && loneActivities.length === 0) {
+  if (events.length === 0 && lone.length === 0) {
     return (
       <View style={s.restDay}>
         <Text style={s.restBadge}>Rest day</Text>
@@ -116,30 +122,41 @@ export default function DayDetails({
 
   return (
     <View style={s.wrap}>
-      {events.map((e) => {
-        const actual = activities.find((a) => a.paired_event_id === e.id);
-        // V-05: visualize planned training sessions (WORKOUT / RACE_*);
+      {events.map(({ event: e, actual }) => {
+        // V-05: visualize planned training sessions (WORKOUT / RACE_*)
         // notes/PLAN categories stay prose-only.
         const training =
           e.category == null || e.category === 'WORKOUT' || e.category.startsWith('RACE');
+        // QA A3: planned targets render here (distance/duration/load — the
+        // same cells the run rows show), not just in the week list; on a
+        // reconciled session the Planned grid sits above the Recorded block so
+        // both values stay visible ("24.0 planned → 24.1 done"). Pure and
+        // cheap — no memo inside the map (rules of hooks).
+        const plannedCells = plannedMetricCells(e, paceMinPerKm ?? null);
         return (
           <View key={`e${e.id ?? e.uid ?? e.start_date_local}`} style={s.block}>
             <View style={s.titleRow}>
               <Text style={s.name} numberOfLines={2}>
                 {e.name ?? 'Planned workout'}
               </Text>
-              <StatusBadge status={runStatus(e, actual ?? null, today)} category={e.category} />
+              <StatusBadge status={runStatus(e, actual, today)} category={e.category} />
             </View>
             <Text style={s.meta}>
               {[timeLabel(e.start_date_local), e.type].filter(Boolean).join(' · ')}
             </Text>
+            {plannedCells.length > 0 ? (
+              <View style={s.actual}>
+                <Text style={s.actualTitle}>Planned</Text>
+                <MetricGrid metrics={plannedCells} cols={dense ? 3 : undefined} />
+              </View>
+            ) : null}
             {e.description && training ? <WorkoutTimeline description={e.description} /> : null}
             {e.description && !(dense && training) ? <Text style={s.description}>{e.description}</Text> : null}
             {actual ? <RecordedBlock activity={actual} cols={dense ? 3 : undefined} /> : null}
           </View>
         );
       })}
-      {loneActivities.map((a) => (
+      {lone.map((a) => (
         <View key={`a${a.id}`} style={s.block}>
           <View style={s.titleRow}>
             <Text style={s.name} numberOfLines={2}>

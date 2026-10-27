@@ -419,4 +419,23 @@ describe('weekHonesty (spec §1.1 buckets)', () => {
     );
     expect(h).toEqual({ extraCount: 0, extraLoad: 0, missedCount: 0, missedLoad: 0 });
   });
+
+  it('an unpaired same-day activity completes its event (QA A2: no missed+extra double-count)', () => {
+    const h = weekHonesty(
+      [
+        ev({ id: 7, start_date_local: '2026-10-24T08:00:00', icu_training_load: 120 }), // done via unpaired run
+        ev({ id: 8, start_date_local: '2026-10-21T06:00:00', icu_training_load: 70 }), // genuinely missed
+      ],
+      [
+        act({
+          id: 'i9',
+          start_date_local: '2026-10-24T07:42:17',
+          icu_training_load: 116, // no paired_event_id — was counted missed AND extra
+        }),
+      ],
+      '2026-10-19',
+      '2026-10-26',
+    );
+    expect(h).toEqual({ extraCount: 0, extraLoad: 0, missedCount: 1, missedLoad: 70 });
+  });
 });

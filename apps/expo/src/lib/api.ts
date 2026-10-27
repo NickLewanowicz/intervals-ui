@@ -94,6 +94,33 @@ export interface ChatStreamOptions {
   onSession?: (sessionId: string) => void;
 }
 
+/**
+ * Map an SSE `proposal` frame to a Proposal — or null when the frame is
+ * unusable (neither a row id nor a payload): rendering a stub would POST
+ * `/api/proposals//apply` on approve (parity-2 BUG #17). Sparse-but-usable
+ * frames (id xor payload) still pass through so the modal can show its
+ * syncing / honest-failure state and hydrate from the pending row
+ * (lib/proposal-hydration.ts).
+ */
+export function proposalFromFrame(data: Record<string, unknown>): Proposal | null {
+  // v2: the worker threads the validated tool-arg bundle through the SSE
+  // event ({ key, summary } | null) so bundled proposals can group live.
+  const bundle = (data.bundle ?? null) as { key?: unknown; summary?: unknown } | null;
+  const id = typeof data.id === 'string' ? data.id : '';
+  const payload = (data.payload ?? null) as EventEx | null;
+  if (!id && !payload) return null;
+  return {
+    id,
+    kind: (data.kind as ProposalKind) ?? 'create_event',
+    payload: payload ?? ({} as EventEx),
+    rationale: typeof data.rationale === 'string' ? data.rationale : null,
+    status: 'pending',
+    created: new Date().toISOString(),
+    bundleKey: bundle && typeof bundle.key === 'string' ? bundle.key : null,
+    bundleSummary: bundle && typeof bundle.summary === 'string' ? bundle.summary : null,
+  };
+}
+
 export async function streamChat(opts: ChatStreamOptions & ChatStreamEvent): Promise<void> {
   let res: Response;
   try {
@@ -137,19 +164,8 @@ export async function streamChat(opts: ChatStreamOptions & ChatStreamEvent): Pro
         if (typeof data.text === 'string') opts.onDelta(data.text);
         break;
       case 'proposal': {
-        // v2: the worker threads the validated tool-arg bundle through the SSE
-        // event ({ key, summary } | null) so bundled proposals can group live.
-        const bundle = (data.bundle ?? null) as { key?: unknown; summary?: unknown } | null;
-        opts.onProposal({
-          id: String(data.id ?? ''),
-          kind: (data.kind as ProposalKind) ?? 'create_event',
-          payload: (data.payload ?? {}) as EventEx,
-          rationale: typeof data.rationale === 'string' ? data.rationale : null,
-          status: 'pending',
-          created: new Date().toISOString(),
-          bundleKey: bundle && typeof bundle.key === 'string' ? bundle.key : null,
-          bundleSummary: bundle && typeof bundle.summary === 'string' ? bundle.summary : null,
-        });
+        const p = proposalFromFrame(data);
+        if (p) opts.onProposal(p); // unusable frames are dropped — never a stub
         break;
       }
       case 'done':
