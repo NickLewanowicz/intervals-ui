@@ -1,7 +1,6 @@
 /**
- * Email + password sign-in (PocketBase). Google OAuth is pending a consent
- * screen — the button ships disabled. The marketing splash is web-only, so
- * the "Back" link is web-only too (native opens here).
+ * Email + password and Google OAuth sign-in (PocketBase). The marketing
+ * splash is web-only, so the "Back" link is web-only too (native opens here).
  */
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
@@ -17,7 +16,7 @@ export default function SignInPage() {
   const { colors } = useTheme();
   const s = styles(colors);
   const insets = useSafeAreaInsets();
-  const { signIn, ready, user } = useAuth();
+  const { signIn, signInWithGoogle, ready, user } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -28,6 +27,24 @@ export default function SignInPage() {
   useEffect(() => {
     if (ready && user) router.replace('/(app)/calendar');
   }, [ready, user]);
+
+  const onGoogle = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
+      // authWithOAuth2 resolves after the popup completes; router guard
+      // handles the bounce into /calendar via the restored user
+    } catch (e) {
+      setError(
+        e instanceof Error && /cancel|closed|popup/i.test(e.message)
+          ? 'Google sign-in was cancelled.'
+          : 'Could not start Google sign-in — try again or use email.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onSubmit = async () => {
     if (!email.trim() || !password) {
@@ -85,7 +102,7 @@ export default function SignInPage() {
           />
           {error ? <Text style={s.error}>{error}</Text> : null}
           <Button title={busy ? 'Signing in…' : 'Sign in'} icon="arrow-forward" onPress={onSubmit} loading={busy} />
-          <Button title="Google — coming soon" variant="ghost" icon="logo-google" disabled />
+          <Button title="Continue with Google" variant="ghost" icon="logo-google" onPress={onGoogle} loading={busy} />
         </Card>
 
         {Platform.OS === 'web' ? (

@@ -11,6 +11,7 @@ interface AuthContextValue {
   ready: boolean;
   user: AppUser | null;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => void;
   /** Re-fetch the user record (after settings PATCHes). */
   refreshUser: () => Promise<void>;
@@ -60,6 +61,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(toAppUser(res.record as Record<string, unknown>));
   }, []);
 
+  const signInWithGoogle = useCallback(async () => {
+    // popup flow on web; native uses the OS browser via the PB SDK
+    const res = await pb.collection('users').authWithOAuth2({ provider: 'google' });
+    setUser(toAppUser(res.record as Record<string, unknown>));
+  }, []);
+
   const signOut = useCallback(() => {
     pb.authStore.clear();
     setUser(null);
@@ -72,8 +79,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ ready, user, signIn, signOut, refreshUser }),
-    [ready, user, signIn, signOut, refreshUser],
+    () => ({ ready, user, signIn, signInWithGoogle, signOut, refreshUser }),
+    [ready, user, signIn, signInWithGoogle, signOut, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
