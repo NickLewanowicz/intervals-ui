@@ -443,7 +443,7 @@ export default function CalendarScreen() {
       {listBody}
       {!firstLoad && !isError && events.length === 0 && activities.length === 0 ? (
         <Empty
-          message="No events in this window. Sync now, or ask your coach to plan something."
+          message="No events in this window. Connect intervals.icu in Settings → Test connection to sync — or ask your coach to plan something."
           icon="calendar-clear-outline"
         />
       ) : null}

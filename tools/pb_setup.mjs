@@ -133,6 +133,14 @@ const usersAdditions = [
   select('units', ['km', 'mi']),
   select('theme', ['system', 'light', 'dark']),
   text('athlete_profile', 4000),
+  // round 23: first-run onboarding gate. The API-key fields are hidden
+  // (invisible to clients), so the client needs a NON-hidden signal for "this
+  // user already connected their keys" — set true when onboarding completes.
+  bool('onboarded'),
+  // round 23: optional OpenAI-compatible chat base for the DIRECT on-device
+  // path (OpenRouter default; LM Studio / Ollama / OpenAI / Groq…). The
+  // server-fallback path stays OpenRouter-only.
+  text('llm_base_url', 500),
 ];
 const existingFieldNames = new Set(users.fields.map((f) => f.name));
 const usersFields = [...users.fields, ...usersAdditions.filter((f) => !existingFieldNames.has(f.name))];

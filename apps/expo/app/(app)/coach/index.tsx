@@ -39,6 +39,7 @@ import { attachProposals } from '@/lib/chat-sessions';
 import { takePendingSelection } from '@/lib/chat-nav';
 import { useAuth } from '@/lib/auth';
 import { getLocalOrKey } from '@/lib/keystore';
+import { getKeyMissingFlag, showKeyBanner } from '@/lib/onboarding';
 import { streamChatDirect, type DirectChatDone, type DirectChatError } from '@/lib/local-chat';
 import { parseCoachMarkdown, type InlineSeg, type MdBlock, type MdTable } from '@/lib/markdown';
 import {
@@ -275,6 +276,11 @@ export default function CoachScreen() {
   const [modal, setModal] = useState<Proposal | null>(null);
   const [bundle, setBundle] = useState<BundleGroup | null>(null);
   const [transport, setTransport] = useState<Transport>('server');
+  // Round 23 key-banner state: null until the local key has been probed, plus
+  // the onboarding "key skipped" flag — together they decide the friendly
+  // "add your OpenRouter key" banner (lib/onboarding.ts showKeyBanner).
+  const [hasLocalKey, setHasLocalKey] = useState<boolean | null>(null);
+  const [keyMissingFlag, setKeyMissingFlag] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const lastSent = useRef<string | null>(null);
@@ -288,6 +294,12 @@ export default function CoachScreen() {
   const sessionProposals = useSessionProposals(demo ? null : sessionId);
   const historyLoadedFor = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Round 23: no key on this device AND no reason to believe one exists on
+  // the account (never onboarded, or the key step was skipped) → the friendly
+  // banner replaces raw errors and sending is short-circuited.
+  const keyBanner =
+    hasLocalKey !== null && user ? showKeyBanner(user, hasLocalKey, keyMissingFlag) : false;
 
   const model = resolveModel(user?.preferredModel || undefined);
   // short name only — the full roster label truncates at 375px
@@ -344,8 +356,11 @@ export default function CoachScreen() {
   // initial transport guess from the local key; every send re-decides
   useEffect(() => {
     let cancelled = false;
-    void getLocalOrKey().then((k) => {
-      if (!cancelled) setTransport(k ? 'device' : 'server');
+    void Promise.all([getLocalOrKey(), getKeyMissingFlag()]).then(([k, missing]) => {
+      if (cancelled) return;
+      setTransport(k ? 'device' : 'server');
+      setHasLocalKey(Boolean(k));
+      setKeyMissingFlag(missing);
     });
     return () => {
       cancelled = true;
@@ -421,15 +436,28 @@ export default function CoachScreen() {
   useFocusEffect(
     useCallback(() => {
       const sel = takePendingSelection();
-      if (!sel) return;
-      if ('demoSessionId' in sel) void loadDemoSession(sel.demoSessionId);
-      else if (sel.sessionId === '') newChat();
-      else switchSession(sel.sessionId);
+      if (sel) {
+        if ('demoSessionId' in sel) void loadDemoSession(sel.demoSessionId);
+        else if (sel.sessionId === '') newChat();
+        else switchSession(sel.sessionId);
+      }
+      // re-probe the local key + missing flag on every focus: tab scenes stay
+      // mounted, so Settings may have saved/cleared a key while this screen
+      // was hidden — the banner and transport must not go stale (round 23).
+      void Promise.all([getLocalOrKey(), getKeyMissingFlag()]).then(([k, missing]) => {
+        setTransport(k ? 'device' : 'server');
+        setHasLocalKey(Boolean(k));
+        setKeyMissingFlag(missing);
+      });
     }, [loadDemoSession, newChat, switchSession]),
   );
 
   const send = async (text: string) => {
     if (!text || sending) return;
+    // Round 23: no OpenRouter key anywhere (never onboarded a key, or the
+    // onboarding key step was skipped) — the banner explains; never surface
+    // a raw transport error for a turn that cannot possibly run.
+    if (keyBanner) return;
     lastSent.current = text;
     setInput('');
     setError(null);
@@ -467,6 +495,7 @@ export default function CoachScreen() {
     // fall back to the worker pre-stream); no key → worker path, unchanged.
     const localKey = await getLocalOrKey();
     setTransport(localKey ? 'device' : 'server');
+    setHasLocalKey(Boolean(localKey));
 
     const onDelta = (t: string) =>
       setMessages((prev) =>
@@ -689,7 +718,10 @@ export default function CoachScreen() {
       (lastMsg?.role === 'assistant' && !lastMsg.streaming));
 
   const recheckTransport = () => {
-    void getLocalOrKey().then((k) => setTransport(k ? 'device' : 'server'));
+    void getLocalOrKey().then((k) => {
+      setTransport(k ? 'device' : 'server');
+      setHasLocalKey(Boolean(k));
+    });
   };
 
   return (
@@ -740,6 +772,22 @@ export default function CoachScreen() {
         onContentSizeChange={followTail}
         onLayout={followTail}
       >
+        {/* Round 23: friendly first-run guard — replaces the raw transport
+            errors a key-less athlete would get from every send. */}
+        {keyBanner ? (
+          <PressableScale
+            accessibilityRole="button"
+            accessibilityLabel="Add your OpenRouter key in Settings to chat with your coach"
+            onPress={() => router.push('/settings')}
+            style={s.keyBanner}
+          >
+            <Icon name="key-outline" size={16} color={colors.accentText} />
+            <Text style={s.keyBannerText}>
+              Add your OpenRouter key in Settings to chat with your coach
+            </Text>
+            <Icon name="chevron-forward" size={14} color={colors.accentText} />
+          </PressableScale>
+        ) : null}
         {messages.length === 0 ? (
           <View style={s.empty}>
             <Image source={COACH_AVATAR} style={s.emptyAvatar} accessibilityIgnoresInvertColors />
@@ -1014,6 +1062,25 @@ const styles = (p: Palette) =>
     },
     empty: { padding: spacing.xl, gap: spacing.md, alignItems: 'center' },
     emptyAvatar: { width: 64, height: 64, borderRadius: 32, marginBottom: spacing.xs },
+    // round 23 key banner (replaces raw errors for key-less athletes)
+    keyBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: p.accentSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: p.accent,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+      minHeight: layout.minTouch,
+    },
+    keyBannerText: {
+      color: p.accentText,
+      fontSize: fontSize.small,
+      fontWeight: '600',
+      flexShrink: 1,
+      flexGrow: 1,
+    },
     emptyTitle: { color: p.text, fontSize: fontSize.h, fontWeight: '600' },
     emptyBody: { color: p.muted, fontSize: fontSize.small, textAlign: 'center', lineHeight: 19 },
     bubble: {

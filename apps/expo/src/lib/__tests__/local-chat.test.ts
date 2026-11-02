@@ -246,12 +246,13 @@ describe('streamChatDirect', () => {
     fetchFn.impl = async (url: string, init?: RequestInit) => {
       if (String(url) !== OPENROUTER_CHAT_URL) throw new Error('unexpected URL ' + url);
       expect(init?.headers).toMatchObject({ Authorization: 'Bearer sk-or-local' });
-      const body = JSON.parse(String(init?.body));
-      expect(body.stream).toBe(true);
-      expect(body.tools?.length).toBeGreaterThan(0);
-      expect(body.messages[0].role).toBe('system');
-      expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'Add an easy run Friday' });
-      expect(body.messages[0].content).toContain('Nick');
+    const body = JSON.parse(String(init?.body));
+    expect(body.stream).toBe(true);
+    expect(body.tools?.length).toBeGreaterThan(0);
+    expect(body.provider).toEqual({ sort: 'throughput', require_parameters: true }); // OpenRouter default kept
+    expect(body.messages[0].role).toBe('system');
+    expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'Add an easy run Friday' });
+    expect(body.messages[0].content).toContain('Nick');
       return sseResponse(
         orFrames([
           { choices: [{ delta: { content: 'Easy ' } }] },
@@ -300,6 +301,30 @@ describe('streamChatDirect', () => {
       name: 'Easy shakeout',
     });
     expect(out.proposals[0]).toMatchObject({ id: 'prop-row', kind: 'create_event', status: 'pending' });
+  });
+
+  it('honors the user llm_base_url on the direct path (OpenAI-compatible endpoint)', async () => {
+    h.state.orKey = 'sk-custom-endpoint';
+    h.state.record = { ...h.state.record, llm_base_url: 'http://127.0.0.1:8099/v1/' };
+    fetchFn.impl = async (url: string, init?: RequestInit) => {
+      if (String(url) !== 'http://127.0.0.1:8099/v1/chat/completions') {
+        throw new Error('unexpected URL ' + url);
+      }
+      expect(init?.headers).toMatchObject({ Authorization: 'Bearer sk-custom-endpoint' });
+      // strict OpenAI-compatible servers 400 on OpenRouter body extras
+      const body = JSON.parse(String(init?.body));
+      expect(body.provider).toBeUndefined();
+      // OpenRouter attribution headers dropped (CORS preflight on custom endpoints)
+      expect((init?.headers as Record<string, string>)['X-Title']).toBeUndefined();
+      expect(body.stream).toBe(true);
+      return sseResponse(orFrames([{ choices: [{ delta: { content: 'mock says hi' } }] }, '[DONE]']));
+    };
+    const { out, opts } = callbacks();
+    await streamChatDirect(opts());
+    expect(out.error).toBeNull();
+    expect(out.deltas.join('')).toBe('mock says hi');
+    expect(out.done?.usedFallback).toBe(false);
+    expect(out.done?.session_id).toBe('sess-direct');
   });
 
   it('falls back to the worker when no local key exists', async () => {

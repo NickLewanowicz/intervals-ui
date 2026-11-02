@@ -82,6 +82,15 @@ export default function SignInPage() {
         <Text style={s.subtitle}>Your training, coached.</Text>
 
         <Card>
+          {/* Google is the primary door (round 23): accent fill, top of the
+              card; email/password becomes the subdued secondary path below a
+              hairline "or use email" divider. Both flows stay functional. */}
+          <Button title="Continue with Google" icon="logo-google" onPress={onGoogle} loading={busy} />
+          <View style={s.dividerRow}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>or use email</Text>
+            <View style={s.dividerLine} />
+          </View>
           <Field
             label="Email"
             value={email}
@@ -101,8 +110,12 @@ export default function SignInPage() {
             textContentType="password"
           />
           {error ? <Text style={s.error}>{error}</Text> : null}
-          <Button title={busy ? 'Signing in…' : 'Sign in'} icon="arrow-forward" onPress={onSubmit} loading={busy} />
-          <Button title="Continue with Google" variant="ghost" icon="logo-google" onPress={onGoogle} loading={busy} />
+          <Button
+            title={busy ? 'Signing in…' : 'Sign in'}
+            variant="ghost"
+            onPress={onSubmit}
+            loading={busy}
+          />
         </Card>
 
         {Platform.OS === 'web' ? (
@@ -139,6 +152,16 @@ const styles = (p: Palette) =>
     title: { color: p.text, fontSize: fontSize.title, fontWeight: '700' },
     subtitle: { color: p.muted, fontSize: fontSize.body, marginTop: -spacing.sm },
     error: { color: p.danger, fontSize: fontSize.small },
+    // "or use email" divider between the Google primary and the subdued
+    // email/password section (round 23)
+    dividerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginVertical: spacing.xs,
+    },
+    dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: p.border },
+    dividerText: { color: p.muted, fontSize: fontSize.tiny, letterSpacing: 0.3 },
     // F17: the link's hit area is a real padded box (was padding on the Text,
     // leaving a 343x16.5 anchor underfilling its own visual)
     backHit: {

@@ -133,12 +133,24 @@ export interface OpenRouterRequestInit {
   tools?: OpenRouterTool[];
   stream?: boolean;
   signal?: AbortSignal;
+  /**
+   * Generic OpenAI-compatible endpoint (user's `llm_base_url`: LM Studio,
+   * Ollama, OpenAI, Groq, Together…). OpenRouter-only extras are OMITTED:
+   * the `provider` router hints and `reasoning` envelope in the body (strict
+   * OpenAI-compatible servers 400 on unknown body arguments) and the
+   * OpenRouter attribution headers (`HTTP-Referer`/`X-Title`) — custom
+   * headers that force a CORS preflight most local/proxy endpoints reject.
+   * Default (false/absent) keeps the exact OpenRouter behavior the Worker
+   * and eval harness have always sent.
+   */
+  compatible?: boolean;
 }
 
 /**
  * Build the fetch init for an OpenRouter chat call. Always sets
  * require_parameters so tool calls never route to providers lacking them
- * (docs/research/openrouter-models-brief.md caveat).
+ * (docs/research/openrouter-models-brief.md caveat) — OpenRouter only; see
+ * `compatible`.
  */
 export function openRouterFetchInit(init: OpenRouterRequestInit): RequestInit {
   const body: Record<string, unknown> = {
@@ -147,25 +159,49 @@ export function openRouterFetchInit(init: OpenRouterRequestInit): RequestInit {
     tools: init.tools,
     tool_choice: 'auto',
     stream: init.stream ?? false,
-    provider: {
+  };
+  if (!init.compatible) {
+    body.provider = {
       sort: 'throughput',
       require_parameters: true,
-    },
-  };
-  if (init.model.reasoningEffort) {
-    body.reasoning = { effort: init.model.reasoningEffort };
+    };
+    if (init.model.reasoningEffort) {
+      body.reasoning = { effort: init.model.reasoningEffort };
+    }
   }
   return {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${init.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://intervals.imnick.dev',
-      'X-Title': 'intervals coach',
-    },
+    headers: init.compatible
+      ? {
+          Authorization: `Bearer ${init.apiKey}`,
+          'Content-Type': 'application/json',
+        }
+      : {
+          Authorization: `Bearer ${init.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://intervals.imnick.dev',
+          'X-Title': 'intervals coach',
+        },
     body: JSON.stringify(body),
     signal: init.signal,
   };
 }
 
 export const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+/**
+ * Chat-completions URL for a user-configured OpenAI-compatible base
+ * (`users.llm_base_url`; round 23). OpenAI convention: the base INCLUDES the
+ * version path (OpenRouter `…/api/v1`, OpenAI `…/v1`, LM Studio
+ * `http://localhost:1234/v1`, Ollama `http://localhost:11434/v1`) — this
+ * normalizes trailing slashes and appends `/chat/completions`. Empty/absent
+ * → the OpenRouter URL; a value already ending in `/chat/completions` (a
+ * full endpoint pasted) is returned as-is.
+ */
+export function chatUrlFor(baseUrl?: string | null): string {
+  const base = (baseUrl ?? '').trim();
+  if (!base) return OPENROUTER_CHAT_URL;
+  const trimmed = base.replace(/\/+$/, '');
+  if (trimmed.endsWith('/chat/completions')) return trimmed;
+  return `${trimmed}/chat/completions`;
+}

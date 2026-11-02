@@ -6,13 +6,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, Tabs } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassBar } from '@/components/glass';
 import { PressableScale } from '@/components/motion';
+import OnboardingSheet from '@/components/OnboardingSheet';
 import { Icon } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
+import { getSettingsVisited, needsOnboarding } from '@/lib/onboarding';
 import { usePendingProposals } from '@/lib/queries';
 import { fontSize, layout, radius, spacing, type Palette } from '@/theme';
 import { useTheme } from '@/theme-context';
@@ -82,14 +84,28 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 }
 
 export default function AppLayout() {
-  const { ready, user } = useAuth();
+  const { ready, user, refreshUser } = useAuth();
   const { colors } = useTheme();
   const pending = usePendingProposals();
   const s = styles(colors);
+  // Round 23 first-run gate: the PB `onboarded` bool + the local
+  // settings-visited fallback. Null until the local flag resolves — no sheet
+  // flash while storage reads.
+  const [visitedSettings, setVisitedSettings] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (ready && !user) router.replace('/sign-in');
   }, [ready, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getSettingsVisited().then((v) => {
+      if (!cancelled) setVisitedSettings(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!ready || !user) {
     return (
@@ -101,6 +117,7 @@ export default function AppLayout() {
   }
 
   const pendingCount = pending.data?.length ?? 0;
+  const showOnboarding = visitedSettings !== null && needsOnboarding(user, visitedSettings);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -118,6 +135,18 @@ export default function AppLayout() {
         />
         <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
       </Tabs>
+      {showOnboarding ? (
+        <OnboardingSheet
+          key={user.id}
+          userId={user.id}
+          onFinished={() => {
+            // the local gate flips immediately (the sheet persisted it too);
+            // refreshUser re-reads the PB `onboarded` field for the long run
+            setVisitedSettings(true);
+            void refreshUser();
+          }}
+        />
+      ) : null}
     </View>
   );
 }

@@ -113,6 +113,22 @@ describe('toAppUser', () => {
     expect(u.updated).toBe('2026-10-24 09:15:00.123Z');
     expect(toAppUser({ id: 'u2' }).updated).toBeNull();
   });
+
+  it('round 23: reads the onboarding bool and llm_base_url with safe defaults', () => {
+    const u = toAppUser({
+      id: 'u3',
+      onboarded: true,
+      llm_base_url: 'http://127.0.0.1:8099/v1',
+    });
+    expect(u.onboarded).toBe(true);
+    expect(u.llmBaseUrl).toBe('http://127.0.0.1:8099/v1');
+    // absent fields → pre-onboarding defaults (sheet shows, OpenRouter default)
+    const fresh = toAppUser({ id: 'u4' });
+    expect(fresh.onboarded).toBe(false);
+    expect(fresh.llmBaseUrl).toBe('');
+    // a non-bool truthy value must NOT count as onboarded
+    expect(toAppUser({ id: 'u5', onboarded: 'yes' }).onboarded).toBe(false);
+  });
 });
 
 describe('format helpers', () => {

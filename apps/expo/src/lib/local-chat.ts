@@ -4,9 +4,10 @@
  * Builds EXACTLY the request the Worker's /api/chat handler builds — same
  * mirror windows (calendar_events −21d→+90d, activities −21d→today, wellness
  * 14d, sport_settings), same shared digests from @intervals/core, same
- * system prompt, same 20-message history — but calls OpenRouter from the
- * client with the locally stored key (lib/keystore.ts) and persists the
- * chat/proposal rows itself via the PB owner-create rules.
+ * system prompt, same 20-message history — but calls the LLM from the
+ * client with the locally stored key (lib/keystore.ts) — OpenRouter by
+ * default, or the user's OpenAI-compatible base (`llm_base_url`, round 23) —
+ * and persists the chat/proposal rows itself via the PB owner-create rules.
  *
  * Fallback contract: when there is no local key, or the direct fetch fails
  * BEFORE any delta has streamed, the turn transparently re-runs through the
@@ -16,7 +17,7 @@
  */
 import {
   COACH_TOOLS,
-  OPENROUTER_CHAT_URL,
+  chatUrlFor,
   ProposalValidationError,
   buildCoachSystemPrompt,
   calendarDigest,
@@ -258,10 +259,15 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
   let system: string;
   let priorMessages: OpenRouterMessage[] = [];
   let model: string | undefined;
+  // round 23: the user's OpenAI-compatible base (Settings → API base URL).
+  // Empty/absent → OpenRouter. Only the DIRECT path honors it; the Worker
+  // fallback stays OpenRouter-only.
+  let customBase = '';
   try {
     const record = userRecord();
     const userId = String(record.id);
     model = opts.model ?? (record.preferred_model as string | undefined);
+    customBase = typeof record.llm_base_url === 'string' ? record.llm_base_url.trim() : '';
     system = await buildSystemPromptDirect(userId);
     if (sessionId) priorMessages = await historyDirect(sessionId);
   } catch (e) {
@@ -288,7 +294,7 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
   let res: Response;
   try {
     res = await fetch(
-      OPENROUTER_CHAT_URL,
+      chatUrlFor(customBase),
       openRouterFetchInit({
         apiKey,
         model: resolveModel(model),
@@ -296,6 +302,9 @@ export async function streamChatDirect(opts: StreamChatDirectOptions): Promise<v
         tools: COACH_TOOLS,
         stream: true,
         signal: opts.signal,
+        // strict OpenAI-compatible servers 400 on OpenRouter's `provider`/
+        // `reasoning` body extras — omit them whenever a custom base is set
+        compatible: customBase !== '',
       }),
     );
   } catch (e) {

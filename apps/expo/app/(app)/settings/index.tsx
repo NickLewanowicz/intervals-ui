@@ -14,6 +14,7 @@ import { Button, Card, Field, Icon, Loading, Screen, SectionTitle } from '@/comp
 import { triggerSync } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { setLocalOrKey } from '@/lib/keystore';
+import { clearKeyMissingFlag, markSettingsVisited } from '@/lib/onboarding';
 import { pb } from '@/lib/pb';
 import { useInvalidateMirrors, useSyncState } from '@/lib/queries';
 import { fontSize, layout, radius, spacing, type Palette, type ThemePreference } from '@/theme';
@@ -40,6 +41,7 @@ export default function SettingsScreen() {
   const [athleteId, setAthleteId] = useState('');
   const [intervalsKey, setIntervalsKey] = useState('');
   const [orKey, setOrKey] = useState('');
+  const [llmBase, setLlmBase] = useState('');
   const [model, setModel] = useState('');
   const [profile, setProfile] = useState('');
   const [profileHeight, setProfileHeight] = useState(PROFILE_MIN_HEIGHT);
@@ -60,7 +62,14 @@ export default function SettingsScreen() {
     setModel(user.preferredModel);
     setProfile(user.athleteProfile);
     setUnits(user.units);
+    setLlmBase(user.llmBaseUrl);
   }, [user]);
+
+  // Round 23: a visit here is the local "this athlete knows their way around"
+  // fallback for the onboarding gate (lib/onboarding.ts).
+  useEffect(() => {
+    void markSettingsVisited();
+  }, []);
 
   if (!user) return <Loading label="Loading settings…" />;
 
@@ -96,6 +105,8 @@ export default function SettingsScreen() {
         preferred_model: model,
         athlete_profile: profile,
         units,
+        // round 23: optional OpenAI-compatible base (empty clears → OpenRouter)
+        llm_base_url: llmBase.trim(),
       };
       // hidden fields are write-only: only send when the athlete typed one
       if (intervalsKey.trim()) patch.intervals_api_key = intervalsKey.trim();
@@ -104,6 +115,8 @@ export default function SettingsScreen() {
         // ADR-0006: also keep this device's copy so chat runs on-device;
         // the PB hidden field stays for the worker fallback
         await setLocalOrKey(orKey.trim());
+        // the coach's "add your key" banner is obsolete the moment a key lands
+        void clearKeyMissingFlag();
       }
       await pb.collection('users').update(user.id, patch);
       await refreshUser(); // reload the auth record into context
@@ -204,6 +217,16 @@ export default function SettingsScreen() {
           autoCapitalize="none"
           secureTextEntry
           hint="BYO key — openrouter.ai/keys. Saving also stores it on this device: chat runs on this device when the key is saved locally."
+        />
+        <Field
+          label="API base URL"
+          value={llmBase}
+          onChangeText={setLlmBase}
+          placeholder="OpenRouter default — leave blank"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          hint="OpenAI-compatible (OpenRouter default · LM Studio · Ollama · OpenAI…). Custom endpoints are used by the direct on-device chat path; the server fallback stays OpenRouter-only."
         />
         <View style={s.modelList} accessibilityLabel="Model picker">
           <Text style={s.fieldLabel}>Model</Text>

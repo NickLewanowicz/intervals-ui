@@ -138,6 +138,10 @@ export interface AppUser {
   preferredModel: string;
   units: 'km' | 'mi';
   athleteProfile: string;
+  /** Round 23: first-run onboarding gate (non-hidden PB bool). */
+  onboarded: boolean;
+  /** Round 23: optional OpenAI-compatible chat base for the DIRECT path. */
+  llmBaseUrl: string;
   /** PB record `updated` timestamp — when ANY of this record's fields last changed. */
   updated: string | null;
 }
@@ -153,6 +157,8 @@ export function toAppUser(record: PbUserRecord): AppUser {
     preferredModel: str(record.preferred_model) ?? '',
     units: record.units === 'mi' ? 'mi' : 'km',
     athleteProfile: str(record.athlete_profile) ?? '',
+    onboarded: record.onboarded === true,
+    llmBaseUrl: str(record.llm_base_url) ?? '',
     updated: str(record.updated) ?? null,
   };
 }
