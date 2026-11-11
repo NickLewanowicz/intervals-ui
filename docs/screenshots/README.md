@@ -15,6 +15,13 @@ Extensions: `.png` for small/flat captures kept lossless, `.jpg` for larger
 ones re-encoded (JPEG q60–80) to keep this folder under ~2 MB. All images are
 compressed for docs embedding — **do not use them as source assets**.
 
+Widget captures (`widget-*`): keep the home-screen context — capture the full
+phone frame (or crop loosely) so wallpaper is visible around the widget card,
+the way the widget actually looks on a launcher. Tight edge-to-edge widget
+crops read as "cropped too aggressively" (owner feedback, round 24); target
+roughly one phone screen with the widget in frame, `sips`-resampled to ~750 px
+wide.
+
 Fresh captures come from the QA screenshot registry: run
 `node tools/shot_registry.mjs` (personas × surfaces →
 `qa-screenshots/registry/<date>/<persona>/`); the curated copies here were

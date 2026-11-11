@@ -90,7 +90,7 @@ export function DeltaChip({ value, goodUp }: { value: number | null; goodUp: boo
         borderRadius: 999,
         paddingHorizontal: 5,
         paddingVertical: 1,
-        marginTop: 2,
+        marginTop: 4,
       }}
     >
       <TextWidget text={label} style={{ fontSize: 9, fontWeight: '700', color }} />

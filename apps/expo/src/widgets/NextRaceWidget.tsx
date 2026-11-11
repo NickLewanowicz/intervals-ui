@@ -47,11 +47,11 @@ export function NextRaceWidget({
   const todayOrTomorrow = race.daysUntil <= 1;
   const countdownSize = countdown.length > 6 ? 22 : 26;
   return (
-    <WidgetCard width={width} height={height} padding={13}>
+    <WidgetCard width={width} height={height} padding={14}>
       <WidgetLabel text="Next race" size={9} />
       <TextWidget
         text={race.name}
-        style={{ fontSize: 15, fontWeight: '700', color: t.text, marginTop: 5, lineHeight: 19 }}
+        style={{ fontSize: 15, fontWeight: '700', color: t.text, marginTop: 7, lineHeight: 19 }}
         maxLines={2}
         truncate="END"
       />
@@ -69,7 +69,7 @@ export function NextRaceWidget({
       />
       <TextWidget
         text={raceDateLine(race.date, race.time)}
-        style={{ fontSize: 10.5, fontWeight: '600', color: t.muted, letterSpacing: 0.8, marginTop: 3 }}
+        style={{ fontSize: 10.5, fontWeight: '600', color: t.muted, letterSpacing: 0.8, marginTop: 5 }}
         maxLines={1}
         truncate="END"
       />
@@ -90,18 +90,18 @@ export function NextRaceWideWidget({
   const countdown = raceCountdownLabel(race.daysUntil);
   const todayOrTomorrow = race.daysUntil <= 1;
   return (
-    <WidgetCard width={width} height={height} padding={10}>
+    <WidgetCard width={width} height={height} padding={12}>
       <FlexWidget style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
         <FlexWidget style={{ flex: 1, flexDirection: 'column', justifyContent: 'center' }}>
           <WidgetLabel text="Next race" size={8} />
           <TextWidget
             text={race.name}
-            style={{ fontSize: 14, fontWeight: '700', color: t.text, marginTop: 2 }}
+            style={{ fontSize: 14, fontWeight: '700', color: t.text, marginTop: 3 }}
             maxLines={1}
             truncate="END"
           />
         </FlexWidget>
-        <FlexWidget style={{ flexDirection: 'column', alignItems: 'flex-end', marginLeft: 8 }}>
+        <FlexWidget style={{ flexDirection: 'column', alignItems: 'flex-end', marginLeft: 10 }}>
           <TextWidget
             text={countdown}
             style={{
@@ -115,7 +115,7 @@ export function NextRaceWideWidget({
           />
           <TextWidget
             text={raceDateLine(race.date, race.time)}
-            style={{ fontSize: 9.5, fontWeight: '600', color: t.muted, letterSpacing: 0.7, marginTop: 1 }}
+            style={{ fontSize: 9.5, fontWeight: '600', color: t.muted, letterSpacing: 0.7, marginTop: 2 }}
             maxLines={1}
             truncate="END"
           />
