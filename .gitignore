@@ -35,3 +35,6 @@ apps/expo/android/
 *.p12
 *.mobileprovision
 .wrangler/
+
+# private working agreement (infra details) — not for the public mirror
+AGENTS.md
