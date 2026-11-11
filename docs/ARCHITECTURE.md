@@ -48,7 +48,7 @@ token.
 | Truth | Holder | Rebuild PocketBase from |
 |---|---|---|
 | Calendar & activities | intervals.icu (canonical) | `POST /api/sync` or `node tools/pb_sync.mjs` (minutes) |
-| Identity | Google OAuth (dev: email+password until consent screen) | re-login recreates |
+| Identity | Google OAuth (live Nov 2026; email+password fallback retained) | re-login recreates |
 | API keys (intervals.icu, OpenRouter) | PocketBase `users` row (hidden fields) | re-enter in Settings |
 | Chat history + proposals | PocketBase | lost on wipe (acceptable; proposals pending > applied are short-lived) |
 | Schema | `tools/pb_setup.mjs` (schema of record) | re-run against a fresh instance |

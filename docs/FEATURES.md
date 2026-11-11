@@ -8,7 +8,7 @@ against the deployed app, so names and numbers in them are test data.
 
 One rule to keep in mind while reading: **the coach never writes to your
 intervals.icu calendar by itself.** Every change arrives as a *proposal* you
-approve or dismiss (see [Proposals](#proposals-approve-every-change)).
+approve or dismiss (see [Proposals](#proposals--approve-every-change)).
 
 ---
 

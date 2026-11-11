@@ -87,10 +87,10 @@ app (Expo web/native) ──reads──▶ PocketBase mirrors ──renders─�
 
 ## License
 
-No LICENSE file yet — **the owner should pick one before the repo goes
-public** (MIT/Apache-2.0 are typical for code; note the docs embed QA
-screenshots and the training knowledge base distills copyrighted books, which
-argues for an all-rights-reserved or dual code/content license).
+MIT for the code — see [LICENSE](LICENSE). Note: the docs embed QA screenshots
+and reference the training knowledge base, which distills published training
+literature (principles only, no reproduced text) — keep that framing intact in
+any redistribution of the docs.
 
 ## Safety
 

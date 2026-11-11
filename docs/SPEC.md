@@ -18,8 +18,8 @@ multi-user-safe.
 ## The product in one flow
 
 1. **Splash** (`/`) — what the app is, how it works, sign-in CTA.
-2. **Sign in** — Google OAuth via PocketBase (until the consent screen exists:
-   email+password dev login; see `docs/AUTH.md`).
+2. **Sign in** — Google OAuth via PocketBase (live since Nov 2026; email
+   + password remains as fallback; see `docs/AUTH.md`).
 3. **Onboarding** (first sign-in) — connect intervals.icu (athlete ID + API
    key from *intervals.icu → Settings → Developer*), add your OpenRouter API
    key (BYO), pick the coach model, optional athlete profile (goals).
@@ -80,7 +80,7 @@ multi-user-safe.
 | Surface | Where | State (2026-10-24) |
 |---|---|---|
 | Splash | `apps/expo/app/(marketing)/index.tsx` | scaffolded (grayscale) — visual pass pending |
-| Sign-in | `apps/expo/app/(auth)/sign-in.tsx` | email+password live; Google button pending OAuth config |
+| Sign-in | `apps/expo/app/(auth)/sign-in.tsx` | Google OAuth primary (live), email+password fallback |
 | Calendar | `apps/expo/app/(app)/calendar/` | scaffolded against real mirror data |
 | Coach chat | `apps/expo/app/(app)/coach/` | SSE streaming + proposal modal scaffolded |
 | Steering modal | `apps/expo/app/(app)/coach/ProposalModal.tsx` | functional; visual pass pending |
