@@ -79,11 +79,11 @@ multi-user-safe.
 
 | Surface | Where | State (2026-10-24) |
 |---|---|---|
-| Splash | `apps/expo/app/(marketing)/index.tsx` | scaffolded (grayscale) — visual pass pending |
+| Splash | `apps/expo/app/(marketing)/index.tsx` | shipped — hero v2 + device showcase (rounds 12/22) |
 | Sign-in | `apps/expo/app/(auth)/sign-in.tsx` | Google OAuth primary (live), email+password fallback |
-| Calendar | `apps/expo/app/(app)/calendar/` | scaffolded against real mirror data |
-| Coach chat | `apps/expo/app/(app)/coach/` | SSE streaming + proposal modal scaffolded |
-| Steering modal | `apps/expo/app/(app)/coach/ProposalModal.tsx` | functional; visual pass pending |
-| Settings | `apps/expo/app/(app)/settings/index.tsx` | key entry, model picker, units |
+| Calendar | `apps/expo/app/(app)/calendar/` | shipped — one-surface layout, pills, reconciled run cards, month panel |
+| Coach chat | `apps/expo/app/(app)/coach/` | shipped — streaming, sessions, markdown, inline proposal cards |
+| Steering modal | `apps/expo/app/(app)/coach/ProposalModal.tsx` | shipped — approval v3: diff bars, timeline compare, bundle multi-select |
+| Settings | `apps/expo/app/(app)/settings/index.tsx` | shipped — keys, model picker, base URL, theme/units, profile editor |
 | Coach API | `apps/worker/src/index.ts` | **live + verified** (chat, proposals, sync, cron) |
 | Mobile (native) | `apps/expo` | same codebase; iOS/Android builds deferred (see ISSUES-VISION) |
