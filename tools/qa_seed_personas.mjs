@@ -173,7 +173,7 @@ const PERSONAS = [
   { email: 'qa-lowdata@intervals.test', kind: 'lowdata', name: 'QA Lowdata' },
   { email: 'qa-empty@intervals.test', kind: 'emptystate', name: 'QA Empty' },
 ];
-const PASS = 'QaPass123!';
+const PASS = process.env.QA_PERSONA_PASSWORD || `Qa${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}!`;
 
 async function createUser(email, pass, name, kind) {
   const r = await pb('POST', '/api/collections/users/records', {
