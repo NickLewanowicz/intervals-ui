@@ -12,6 +12,8 @@ Deployment runs on Cloudflare Pages + Workers with a PocketBase data layer —
 see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full topology and
 [`.env.example`](.env.example) for configuration.
 
+![Calendar — week view on desktop web](docs/screenshots/calendar-week-desktop-dark.png)
+
 ## Features
 
 - **Sign-in** — Google OAuth (primary) + email/password fallback
@@ -26,7 +28,81 @@ Full walkthrough with screenshots: **`docs/FEATURES.md`**.
 
 ## Screenshots
 
-Every feature in this README is documented with embedded captures in
+A tour through the app — web (desktop) and mobile, dark unless noted.
+
+**Calendar**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/calendar-week-mobile-dark.jpg" width="250" alt="Week view — mobile"><br><sub>Week — mobile</sub></td>
+    <td align="center"><img src="docs/screenshots/calendar-month-dark.jpg" width="250" alt="Month view — mobile"><br><sub>Month view</sub></td>
+    <td align="center"><img src="docs/screenshots/calendar-week-race-dark.jpg" width="250" alt="Race week with badges"><br><sub>Race week</sub></td>
+    <td align="center"><img src="docs/screenshots/day-peek-mobile-dark.jpg" width="250" alt="Day peek sheet — mobile"><br><sub>Day peek sheet</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/screenshots/theme-calendar-light.jpg" width="400" alt="Calendar — light theme (desktop)"><br><sub>Light theme (web)</sub></td>
+    <td align="center" colspan="2"><img src="docs/screenshots/theme-calendar-dark.jpg" width="400" alt="Calendar — dark theme (desktop)"><br><sub>Dark theme (web)</sub></td>
+  </tr>
+</table>
+
+**Day detail — workout text, actuals, zone bars**
+
+![Day detail on desktop web](docs/screenshots/day-detail-recorded-light.png)
+
+**Stats**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/status-sheet-dark.jpg" width="400" alt="Your training, right now"><br><sub>"Your training, right now"</sub></td>
+    <td align="center"><img src="docs/screenshots/status-sheet-zones-dark.jpg" width="400" alt="Zone mix"><br><sub>Zone mix</sub></td>
+  </tr>
+</table>
+
+**AI coach**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/coach-chat-dark.jpg" width="250" alt="Coach chat — mobile"><br><sub>Chat</sub></td>
+    <td align="center"><img src="docs/screenshots/coach-sessions-light.png" width="250" alt="Coach sessions list"><br><sub>Sessions</sub></td>
+  </tr>
+</table>
+
+**Proposals — approve every change**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/proposal-modal-dark.jpg" width="400" alt="Proposal review modal with field diffs (web)"><br><sub>Review with field diffs (web)</sub></td>
+    <td align="center"><img src="docs/screenshots/bundle-multiselect-dark.jpg" width="400" alt="Bundle multi-select (web)"><br><sub>Bundle multi-select (web)</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/screenshots/proposal-confirm-mobile-dark.jpg" width="250" alt="Applying a proposal — mobile"><br><sub>Apply — mobile</sub></td>
+  </tr>
+</table>
+
+**Android home-screen widgets**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/widget-upcoming.jpg" width="250" alt="Upcoming runs widget on a home screen"><br><sub>Upcoming runs</sub></td>
+    <td align="center"><img src="docs/screenshots/widget-fitness.jpg" width="250" alt="Fitness trend widget on a home screen"><br><sub>Fitness trend</sub></td>
+    <td align="center"><img src="docs/screenshots/widget-nextrace.jpg" width="250" alt="Next race countdown widget on a home screen"><br><sub>Next race</sub></td>
+    <td align="center"><img src="docs/screenshots/widgets-picker.jpg" width="200" alt="Widget picker"><br><sub>Pick a widget</sub></td>
+  </tr>
+</table>
+
+**Getting started**
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/sign-in-google.png" width="400" alt="Google sign-in screen"><br><sub>Google sign-in (primary)</sub></td>
+    <td align="center"><img src="docs/screenshots/coach-empty-keybanner-dark.jpg" width="400" alt="First-run banner prompting to add keys"><br><sub>First run — add your keys</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/screenshots/settings-dark.jpg" width="250" alt="Settings with BYO keys"><br><sub>Settings — BYO keys, model picker, themes</sub></td>
+  </tr>
+</table>
+
+Every feature above is documented with full embedded walkthroughs in
 [`docs/FEATURES.md`](docs/FEATURES.md); the curated images live in
 [`docs/screenshots/`](docs/screenshots/README.md). The raw QA capture library
 (200+ shots across personas and surfaces) is regenerated any time via `tools/shot_registry.mjs` + `tools/parity_shots.sh` (the `qa-screenshots/` folder itself is gitignored — it's a local observation surface).
