@@ -182,7 +182,7 @@ export default function SettingsScreen() {
           label="Athlete ID"
           value={athleteId}
           onChangeText={setAthleteId}
-          placeholder="i167187"
+          placeholder="e.g. i123456"
           autoCapitalize="none"
           hint="On intervals.icu: Settings → Developer shows both your athlete ID and API key."
         />

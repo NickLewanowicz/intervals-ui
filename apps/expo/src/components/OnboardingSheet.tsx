@@ -130,7 +130,7 @@ export default function OnboardingSheet({
                 label="Athlete ID"
                 value={athleteId}
                 onChangeText={setAthleteId}
-                placeholder="i167187"
+                placeholder="e.g. i123456"
                 autoCapitalize="none"
               />
               <Field
