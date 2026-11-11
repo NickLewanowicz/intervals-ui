@@ -6,10 +6,12 @@ calendar, stats — with an AI coach grounded in **80/20 training principles**
 your running… and **you approve every change** before it touches your real
 calendar.
 
-- **App:** https://intervals.imnick.dev (Cloudflare Pages — Expo web export; native iOS/Android from the same codebase, in progress)
-- **Coach API:** https://intervals-coach.imnick.workers.dev (Cloudflare Worker: chat SSE, steered proposal writes, 6-hourly data sync cron)
-- **Data:** PocketBase https://intervals.pockethost.io (rebuildable mirror of intervals.icu + app state; BYO keys stored hidden)
-- **Repo:** github.com/NickLewanowicz/intervals-ui (public) · git.imnick.dev/nick/intervals (private deploy mirror, CI/CD)
+**Live app:** [intervals.imnick.dev](https://intervals.imnick.dev) ·
+native iOS/Android from the same codebase (Android beta ready; iOS in progress)
+
+Deployment runs on Cloudflare Pages + Workers with a PocketBase data layer —
+see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full topology and
+[`.env.example`](.env.example) for configuration.
 
 ## Features
 

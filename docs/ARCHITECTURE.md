@@ -115,7 +115,7 @@ numbers (`tools/eval_prompts.mjs`, log in `docs/research/eval-log.md`).
 | Thing | Where | How |
 |---|---|---|
 | Web | `intervals.imnick.dev` → `intervals-356.pages.dev` (CNAME, unproxied) | Gitea Actions on push to main: `expo export --platform web` → `wrangler pages deploy` |
-| Coach API | `intervals-coach.imnick.workers.dev` (+ secret env: PB_URL/PB_EMAIL/PB_PASSWORD/CRON_SECRET) | same CI: `wrangler deploy` (secrets persist across deploys) |
+| Coach API | Cloudflare Worker (deployed subdomain in owner config; see `apps/worker/wrangler.jsonc`) | same CI: `wrangler deploy` (secrets persist across deploys) |
 | Sync cron | Worker trigger `0 */6 * * *` | native; `GET /api/cron` (X-Cron-Secret) is the manual fallback |
 | PocketBase | pockethost instance `intervals` | SFTP access (host/key in owner secrets) for backup + restore |
 | Repo/CI | Gitea `nick/intervals` (runner on tower) | `.gitea/workflows/ci.yml` |

@@ -1,5 +1,5 @@
 # Copy to .dev.vars for local `wrangler dev` (gitignored).
-PB_URL=https://intervals.pockethost.io
+PB_URL=https://your-pb-instance.example
 PB_EMAIL=your-superuser-email
 PB_PASSWORD=
 CRON_SECRET=any-random-string-you-generate
