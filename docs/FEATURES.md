@@ -202,7 +202,9 @@ motion) is documented in [`design/DESIGN-LANGUAGE.md`](design/DESIGN-LANGUAGE.md
 ## Home-screen widgets (Android)
 
 Three widget families for the Android home screen, fed by the same snapshot
-the app writes on sync (and refreshed 6-hourly by the Worker):
+the app writes on sync (and refreshed 6-hourly by the Worker). The native
+receivers are generated at `expo prebuild` by the react-native-android-widget
+config plugin — the JS/TS definitions live in `apps/expo/src/widgets/`:
 
 - **Fitness** (2×2 and wide 4×2) — CTL, ATL, form verdict and a 14-day
   fitness sparkline.
