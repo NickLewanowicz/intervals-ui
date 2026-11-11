@@ -46,10 +46,14 @@ function sse(res, model, messages, withTools) {
   });
   // tool-call path: persona asked for a calendar change
   if (withTools && /add|schedule|move|cut|drop|remove/i.test(lastUser?.content || '')) {
+    // next Thursday 07:00 local (always in the current week+, never stale)
+    const thursday = new Date();
+    thursday.setUTCDate(thursday.getUTCDate() + ((4 - thursday.getUTCDay() + 7) % 7 || 7));
+    const thursdayIso = thursday.toISOString().slice(0, 10) + 'T07:00';
     const chunks = [
       { delta: { tool_calls: [{ index: 0, id: 'mock-call-1', function: { name: 'propose_event', arguments: '' } }] } },
-      { delta: { tool_calls: [{ index: 0, function: { arguments: '{"start_date_local":"2026-11-03T07:00","name":"Easy mock run","category":"WORKOUT","type":"Run","description":"- 5km Z2 Pace","distance":5000,"moving_time":1800,"rationale":"Mock proposal from the QA stack."}' } }] } },
-      { delta: { content: 'I proposed an easy 5km run on Monday — approve it if it looks right.' } },
+      { delta: { tool_calls: [{ index: 0, function: { arguments: `{"start_date_local":"${thursdayIso}","name":"Easy 5km","category":"WORKOUT","type":"Run","description":"- 5km easy, conversational pace\\n- 4 relaxed strides after","distance":5000,"moving_time":1800,"rationale":"Recovery between the Tuesday intervals and the Saturday tempo."}` } }] } },
+      { delta: { content: 'I proposed an easy 5km on Thursday morning — approve it if it looks right.' } },
     ];
     for (const c of chunks) res.write(`data: ${JSON.stringify({ choices: [{ delta: c.delta }] })}\n\n`);
     res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], usage: { prompt_tokens: 100, completion_tokens: 40, total_tokens: 140 } })}\n\n`);
@@ -84,6 +88,19 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ data: { limit_remaining: Math.max(0, REAL_BUDGET_USD - realSpend) } }));
     return;
+  }
+  if (req.url?.includes('/chat/completions')) {
+    // the app's DIRECT chat path fetches us from the browser (localhost:8091)
+    // — mirror OpenRouter's permissive CORS or the preflight/fetch fails and
+    // the turn silently falls back to the worker transport
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
   }
   if (req.url?.includes('/chat/completions') && req.method === 'POST') {
     let body = '';

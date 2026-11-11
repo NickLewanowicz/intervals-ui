@@ -48,6 +48,20 @@ const pbJson = async (method, path, body, bearer) => {
   return { status: r.status, json: text ? JSON.parse(text) : null };
 };
 
+// Applied create_event proposals land on the LOCAL mirror (the real worker
+// writes intervals.icu and the cron re-syncs the mirror — QA collapses that
+// into one write so the calendar shows the applied run immediately).
+async function applyMirrorEvent(row, su) {
+  if (row?.kind !== 'create_event' || !row?.payload) return;
+  const p = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+  await pbJson('POST', '/api/collections/calendar_events/records', {
+    user: row.user,
+    intervals_id: 900000 + (Date.now() % 100000),
+    ...p,
+    data: p,
+  }, su).catch(() => {});
+}
+
 const Reply = (msg) => {
   const m = (msg || '').toLowerCase();
   if (m.includes('week') || m.includes('adjust'))
@@ -168,6 +182,7 @@ const server = http.createServer(async (req, res) => {
       for (const id of ids) {
         const r = await pbJson('PATCH', `/api/collections/proposals/records/${id}`, { status: action }, su);
         results.push({ id, ok: r.status === 200, status: r.status === 200 ? action : undefined });
+        if (action === 'applied') await applyMirrorEvent(r.json, su);
       }
       return json2({ ok: results.every((r) => r.ok), results });
     }
@@ -175,6 +190,7 @@ const server = http.createServer(async (req, res) => {
     if (single && req.method === 'POST') {
       const su = await superuser();
       const r = await pbJson('PATCH', `/api/collections/proposals/records/${single[1]}`, { status: single[2] === 'apply' ? 'applied' : 'dismissed' }, su);
+      if (single[2] === 'apply') await applyMirrorEvent(r.json, su);
       return json2({ ok: r.status === 200, proposal: r.json }, r.status === 200 ? 200 : 400);
     }
 

@@ -14,6 +14,22 @@ see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full topology and
 
 ![Calendar — week view on desktop web](docs/screenshots/calendar-week-desktop-dark.png)
 
+## See it in action
+
+Recorded from the real app (web, dark) against a local test account.
+
+**Browse the plan** — tap a day for details, switch week ↔ month:
+
+![GIF: browsing the calendar — day panel, week strip, month view](docs/gifs/calendar-tour.gif)
+
+**Ask your coach** — grounded in your calendar, recovery and plan; answers stream:
+
+![GIF: asking the coach a question and watching the reply stream in](docs/gifs/coach-chat.gif)
+
+**Propose → approve → on the calendar.** Every write is a proposal you review and approve — then it lands on your week:
+
+![GIF: the coach proposes an easy 5km, the review modal opens, approving adds it to Thursday on the calendar](docs/gifs/proposal-flow.gif)
+
 ## Features
 
 - **Sign-in** — Google OAuth (primary) + email/password fallback
@@ -104,7 +120,8 @@ A tour through the app — web (desktop) and mobile, dark unless noted.
 
 Every feature above is documented with full embedded walkthroughs in
 [`docs/FEATURES.md`](docs/FEATURES.md); the curated images live in
-[`docs/screenshots/`](docs/screenshots/README.md). The raw QA capture library
+[`docs/screenshots/`](docs/screenshots/README.md) and the animated captures in
+[`docs/gifs/`](tools/gif/README.md). The raw QA capture library
 (200+ shots across personas and surfaces) is regenerated any time via `tools/shot_registry.mjs` + `tools/parity_shots.sh` (the `qa-screenshots/` folder itself is gitignored — it's a local observation surface).
 
 ## Built with AI assistance
