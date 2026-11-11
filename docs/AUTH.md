@@ -1,10 +1,16 @@
 # Authentication — Google OAuth via PocketBase
 
-Plan mirrors the viet-study pattern (same infrastructure family). Status
-2026-10-24: **not yet configured** — the app runs on email+password dev
-login (`tools/pb_dev_user.mjs`, creds in `.scratch/dev-user.txt`). Google
-OAuth is deliberately not blocking anything: the users collection and app
-flows are identical either way.
+Plan mirrors the viet-study pattern (same infrastructure family).
+
+> **Status: LIVE.** Google OAuth was configured and enabled in **November
+> 2026**: the OAuth client exists, the PocketBase `google` provider is
+> enabled with the production client ID/secret, and the sign-in screen's
+> **Continue with Google** button is the primary door (email + password
+> remains as fallback). See `docs/FEATURES.md` → Sign-in for the
+> user-facing behavior.
+>
+> The setup instructions below are kept for posterity (and for re-provisioning
+> a fresh PocketBase instance).
 
 ## Part A — Google Cloud Console (Nick, ~5 min, requires Google login)
 
@@ -30,22 +36,22 @@ flows are identical either way.
 ```bash
 TOKEN=$(curl -s -X POST "https://intervals.pockethost.io/api/collections/_superusers/auth-with-password" \
   -H "Content-Type: application/json" \
-  -d '{"identity":"superuser@redacted.local","password":"***"}' | jq -r .token)
+  -d '{"identity":"YOUR_SUPERUSER_EMAIL","password":"***"}' | jq -r .token)
 curl -s -X PATCH "https://intervals.pockethost.io/api/collections/users" \
   -H "Authorization: $TOKEN" -H "Content-Type: application/json" \
   -d '{"authProviders":[{"name":"google","enabled":true,"clientId":"<CLIENT_ID>","clientSecret":"<CLIENT_SECRET>"}]}'
 curl -s "https://intervals.pockethost.io/api/collections/users/auth-methods" | jq '.oauth2'
 ```
 
-## Part C — App side (built already, just enable)
+## Part C — App side (shipped, live)
 
-`apps/expo` sign-in screen ships both paths:
+`apps/expo` sign-in screen ships both paths (round 23 made Google primary):
 - `loginWithGoogle()` → `pb.collection('users').authWithOAuth2({provider:'google'})`
   (popup flow on web; native uses the OS browser via the PB SDK's flow).
-- The "Continue with Google" button flips from `disabled` to live once Part B
-  runs — see issue V-08 in `docs/ISSUES-VISION.md` for the acceptance test.
-- Optional hardening after Google lands: disable password auth on the
-  collection (`passwordAuth.enabled = false`) and rotate the dev-user password.
+- The **Continue with Google** button is live above an "or use email" divider;
+  email + password stays as the fallback path.
+- Optional hardening (not done): disable password auth on the collection
+  (`passwordAuth.enabled = false`) and rotate the dev-user password.
 
 ## Security notes
 

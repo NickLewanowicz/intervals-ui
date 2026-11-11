@@ -28,3 +28,10 @@ qa-screenshots/
 #   cd apps/expo && JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home npx expo prebuild --platform android --no-install
 #   cd android && JAVA_HOME=<same> ./gradlew assembleRelease
 apps/expo/android/
+
+# signing/provisioning artifacts
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+.wrangler/
