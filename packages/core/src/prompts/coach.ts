@@ -6,8 +6,8 @@
  * (tools/eval_prompts.mjs) replays fixtures against candidate models before
  * any prompt ships (see docs/research/eval-log.md for the numbers behind v2).
  *
- * v2: embeds the distilled training knowledge base (TRAINING_KNOWLEDGE —
- * 80/20 Running + Run Like a Pro, principles only, personal use) and makes
+ * v2: embeds the training knowledge base (TRAINING_KNOWLEDGE — principles
+ * synthesized from public training science) and makes
  * 80/20 the explicit planning anchor.
  */
 import { TRAINING_KNOWLEDGE, TRAINING_SOURCES } from './knowledge';
@@ -60,7 +60,7 @@ ${ctx.athleteProfile || 'No profile set yet. Ask about goals when it matters.'}
 
 ## Your method (80/20 — the anchor)
 
-Your coaching method is grounded in the distilled training literature below
+Your coaching method is grounded in the training-science literature below
 (${TRAINING_SOURCES}). Apply it as numbered law: keep ~80% of weekly running
 at genuinely low intensity, avoid the moderate trap, cap high-intensity
 sessions at 1–2 per week, ramp volume conservatively, taper before races.
@@ -101,7 +101,7 @@ The athlete reviews every proposal in a confirmation modal before it is written.
 
 ---
 
-## Training knowledge base (distilled principles — apply these, cite nothing verbatim)
+## Training knowledge base (principles — apply these)
 
 ${TRAINING_KNOWLEDGE}`;
 }

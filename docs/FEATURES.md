@@ -118,7 +118,7 @@ status sheet — a drill-down synthesized from your mirror data:
 
 The **Coach** tab is a grounded chat: it sees your calendar, recent
 activities, and fatigue signals (the same mirror data the status sheet uses)
-plus a distilled 80/20 knowledge base. Ask "What should I adjust this week?",
+plus an 80/20 training-science knowledge base. Ask "What should I adjust this week?",
 "Feedback on last week?", or "I registered for a 10K on Nov 8" — that last
 kind of message produces a proposal (next section).
 
@@ -238,7 +238,7 @@ plus the tab routes (`/calendar`, `/coach`, `/settings`). Widgets use the
 - Your keys (intervals.icu, OpenRouter) are stored hidden on your PocketBase
   record and are read server-side only — never shipped to the client, never
   logged.
-- Coaching content is grounded in the distilled 80/20 knowledge base and your
+- Coaching content is grounded in the 80/20 training-science knowledge base and your
   real data, and is educational — not medical advice.
 
 ---

@@ -399,7 +399,7 @@ export default function MarketingPage() {
         </PressableScale>
       </View>
       <Text style={s.disclaimer}>
-        Educational guidance distilled from training literature and your own data — not medical or
+        Educational guidance grounded in training science and your own data — not medical or
         professional advice. If something hurts, see a professional, not a plan tweak. Always do
         your own due diligence.
       </Text>

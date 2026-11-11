@@ -2,9 +2,8 @@
 
 A simplified view of your [intervals.icu](https://intervals.icu) training —
 calendar, stats — with an AI coach grounded in **80/20 training principles**
-(Matt Fitzgerald's *80/20 Running* + *Run Like a Pro*, distilled) that plans
-your running… and **you approve every change** before it touches your real
-calendar.
+and public endurance-science research that plans your running… and **you
+approve every change** before it touches your real calendar.
 
 **Live app:** [intervals.imnick.dev](https://intervals.imnick.dev) ·
 native iOS/Android from the same codebase (Android beta ready; iOS in progress)
@@ -38,7 +37,7 @@ This project is built by the maintainer with heavy LLM/agent assistance:
 planning, implementation, QA walkthroughs (the persona swarm behind
 `docs/qa/` and `qa-screenshots/`), prompt/model evals, and this documentation
 were all produced iteratively with coding agents — the commit history
-reflects that agent-assisted development. Training guidance is distilled from
+reflects that agent-assisted development. Training guidance is synthesized from
 published sources (see `docs/research/training-knowledge-summary.md`);
 product decisions are the maintainer's.
 
@@ -97,5 +96,5 @@ any redistribution of the docs.
 
 Every calendar mutation is a proposal you approve in a modal — the AI cannot
 write to intervals.icu on its own. Training guidance is educational
-(distilled from the books above + your data), not medical advice: pain,
+(synthesized from published training science + your data), not medical advice: pain,
 injury, or health red flags mean a professional, not a plan tweak.
