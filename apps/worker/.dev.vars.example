@@ -2,4 +2,4 @@
 PB_URL=https://intervals.pockethost.io
 PB_EMAIL=your-superuser-email
 PB_PASSWORD=
-CRON_SECRET=dev-secret
+CRON_SECRET=any-random-string-you-generate

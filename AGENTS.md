@@ -69,10 +69,9 @@ Sequencing rule: functional correctness issues (F-*) before visual polish
 - **Deploy:** push `main` → Gitea Actions → tests → Worker deploy (`wrangler`,
   CLOUDFLARE_WORKERS_TOKEN) + web deploy (`expo export:web` → Pages,
   CLOUDFLARE_API_TOKEN). Secrets already on the repo.
-- **PocketBase:** instance `intervals` on pockethost; SFTP
-  `ftp.pockethost.io:2222` with `~/.ssh/pockethost_ed25519`; superuser creds in
-  root `.env`; provisioning `node tools/pb_setup.mjs`; seeding/sync
-  `node tools/pb_sync.mjs`; dev login `node tools/pb_dev_user.mjs`
+- **PocketBase:** instance `intervals` on pockethost; superuser credentials in
+  the root `.env` (gitignored); provisioning `node tools/pb_setup.mjs`;
+  seeding/sync `node tools/pb_sync.mjs`; dev login `node tools/pb_dev_user.mjs`
   (credentials land in `.scratch/dev-user.txt`).
 - **intervals.icu:** auth is Basic with username literally `API_KEY`;
   athlete id `0` = self; rate limits 5k/day + 2.5k/15min; browser-like UA

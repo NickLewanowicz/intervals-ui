@@ -9,7 +9,7 @@ calendar.
 - **App:** https://intervals.imnick.dev (Cloudflare Pages — Expo web export; native iOS/Android from the same codebase, in progress)
 - **Coach API:** https://intervals-coach.imnick.workers.dev (Cloudflare Worker: chat SSE, steered proposal writes, 6-hourly data sync cron)
 - **Data:** PocketBase https://intervals.pockethost.io (rebuildable mirror of intervals.icu + app state; BYO keys stored hidden)
-- **Repo:** git.imnick.dev/nick/intervals (private mirror; public mirror planned)
+- **Repo:** github.com/NickLewanowicz/intervals-ui (public) · git.imnick.dev/nick/intervals (private deploy mirror, CI/CD)
 
 ## Features
 
